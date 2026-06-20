@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { CRMData, Customer } from './types';
+import { CRMData, Customer, AuditLog } from './types';
 import { loadCRMData, saveCRMData, hashPassword, fetchServerCRMData, saveServerCRMData } from './storage';
 import Sidebar from './components/Sidebar';
 import AdminCRM from './components/AdminCRM';
@@ -45,12 +45,13 @@ const getPasswordStrength = (password: string) => {
   }
 };
 
-const generateStrongPassword = (): string => {
+const generateStrongPassword = (customSpecialChars?: string): string => {
   const length = 15;
   const lowercase = "abcdefghijklmnopqrstuvwxyz";
   const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const digits = "0123456789";
-  const special = "!@#$%&*?_-";
+  const special = customSpecialChars !== undefined ? customSpecialChars : "!@#$%&*?_-";
+  const hasSpecial = special.length > 0;
   const allChars = lowercase + uppercase + digits + special;
 
   // Guarantee at least one character from each class to satisfy strong metrics
@@ -58,9 +59,12 @@ const generateStrongPassword = (): string => {
   chars.push(lowercase[Math.floor(Math.random() * lowercase.length)]);
   chars.push(uppercase[Math.floor(Math.random() * uppercase.length)]);
   chars.push(digits[Math.floor(Math.random() * digits.length)]);
-  chars.push(special[Math.floor(Math.random() * special.length)]);
+  if (hasSpecial) {
+    chars.push(special[Math.floor(Math.random() * special.length)]);
+  }
 
-  for (let i = 4; i < length; i++) {
+  const startLen = hasSpecial ? 4 : 3;
+  for (let i = startLen; i < length; i++) {
     chars.push(allChars[Math.floor(Math.random() * allChars.length)]);
   }
 
@@ -78,6 +82,22 @@ const generateStrongPassword = (): string => {
 export default function App() {
   // --- APPLICATION STATE ---
   const [data, setData] = useState<CRMData>(loadCRMData());
+
+  const addAuditLog = (action: string, user: string, details: string, status: 'success' | 'failure' | 'warning' | 'info') => {
+    const newLog: AuditLog = {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      timestamp: new Date().toISOString(),
+      action,
+      user,
+      details,
+      status,
+      ipAddress: '127.0.0.1 (Lokale Sitzung)'
+    };
+    setData(prev => ({
+      ...prev,
+      auditLogs: [newLog, ...(prev.auditLogs || [])]
+    }));
+  };
   const [session, setSession] = useState<{
     role: 'admin' | 'customer';
     userId: string; // 'admin' or customerId
@@ -117,6 +137,30 @@ export default function App() {
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
   const [regSuccess, setRegSuccess] = useState<boolean>(false);
+
+  // --- PASSWORD GENERATOR CONFIG STATE ---
+  const [allowedSpecialSymbols, setAllowedSpecialSymbols] = useState<string[]>(['!', '@', '#', '$', '%', '&', '*', '?', '_', '-']);
+
+  // --- LOGIN LOCKOUT STATE ---
+  const [failedLoginAttempts, setFailedLoginAttempts] = useState<number>(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutCountdown, setLockoutCountdown] = useState<number>(0);
+
+  // --- BRUTE FORCE LOCKOUT TICKER ---
+  useEffect(() => {
+    if (lockoutUntil === null) return;
+
+    const intervalId = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((lockoutUntil - Date.now()) / 1000));
+      setLockoutCountdown(remaining);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setFailedLoginAttempts(0);
+      }
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [lockoutUntil]);
 
   // Synchronize state changes directly with localStorage and the server if online
   useEffect(() => {
@@ -185,6 +229,49 @@ export default function App() {
     }
   }, [data.customers]);
 
+  // Global Keyboard Shortcuts (Ctrl+K: Search / Ctrl+D: Dashboard)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!session) return;
+
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (isCtrl) {
+        const key = e.key.toLowerCase();
+        
+        if (key === 'k') {
+          e.preventDefault();
+          if (session.role === 'admin') {
+            setActiveTab('customers');
+            setTimeout(() => {
+              const searchInput = document.getElementById('customer-search-input');
+              if (searchInput) {
+                searchInput.focus();
+                (searchInput as HTMLInputElement).select();
+              }
+            }, 100);
+          } else {
+            setActiveTab('inventory');
+            setTimeout(() => {
+              const searchInput = document.getElementById('customer-product-search-input');
+              if (searchInput) {
+                searchInput.focus();
+                (searchInput as HTMLInputElement).select();
+              }
+            }, 100);
+          }
+        } else if (key === 'd') {
+          e.preventDefault();
+          setActiveTab('dashboard');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [session]);
+
   // --- CALCULATE UNREAD MESSAGE BADGES ---
   const unreadMessagesCount = useMemo(() => {
     if (!session) return 0;
@@ -207,12 +294,17 @@ export default function App() {
       return;
     }
 
+    if (lockoutUntil !== null && Date.now() < lockoutUntil) {
+      setLoginError(`Sicherheitssperre aktiv: Zu viele fehlerhafte Anmeldeversuche. Bitte warten Sie noch ${lockoutCountdown} Sekunden.`);
+      return;
+    }
+
     setLoginError(null);
     setIsVerifying(true);
 
     try {
       if (loginRole === 'admin') {
-        const adminHash = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"; // SHA256 of 'admin123'
+        const adminHash = data.adminProfile?.passwordHash || "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9"; // SHA255 of 'admin123'
         const computedHash = await hashPassword(password);
         
         if (username.toLowerCase() === 'admin' && computedHash === adminHash) {
@@ -222,11 +314,33 @@ export default function App() {
             displayName: data.adminProfile?.name || 'Administrator',
             companyName: data.adminProfile?.company || 'CRM Portal'
           };
+          
+          // Increment admin login counter for backup reminders
+          const currentCount = parseInt(localStorage.getItem('admin_login_count') || '0', 10);
+          localStorage.setItem('admin_login_count', (currentCount + 1).toString());
+
+          // Reset failure states
+          setFailedLoginAttempts(0);
+          setLockoutUntil(null);
+          setLockoutCountdown(0);
+
+          addAuditLog('Anmeldung erfolgreich', 'admin', 'Erfolgreiche Anmeldung des Administrators', 'success');
+
           setSession(newSession);
           sessionStorage.setItem('crm_active_session', JSON.stringify(newSession));
           setActiveTab('dashboard');
         } else {
-          setLoginError('Ungültige Administrator-Zugangsdaten.');
+          const newAttempts = failedLoginAttempts + 1;
+          setFailedLoginAttempts(newAttempts);
+          if (newAttempts >= 5) {
+            setLockoutUntil(Date.now() + 30 * 1000);
+            setLockoutCountdown(30);
+            setLoginError('Sicherheitssperre aktiv: Zu viele fehlerhafte Anmeldeversuche. Bitte warten Sie 30 Sekunden.');
+            addAuditLog('Sicherheitssperre aktiviert', 'admin', '30 Sekunden Sperre aufgrund von 5 fehlerhaften Login-Versuchen aktiviert', 'warning');
+          } else {
+            setLoginError(`Ungültige Administrator-Zugangsdaten. (Versuch ${newAttempts} von 5)`);
+            addAuditLog('Anmeldung fehlgeschlagen', 'admin', `Ungültiger Login-Versuch als Administrator (Versuch ${newAttempts} von 5)`, 'failure');
+          }
         }
       } else {
         // Customer login lookup
@@ -238,6 +352,7 @@ export default function App() {
           if (computedHash === customer.passwordHash) {
             if (customer.approved === false) {
               setLoginError('Ihr Zugang wurde erfolgreich registriert, muss jedoch erst durch den Administrator freigeschaltet werden.');
+              addAuditLog('Anmeldung blockiert', customer.username, `Login blockiert: Kunden-Konto ist noch nicht durch Admin freigeschaltet`, 'info');
               return;
             }
             const newSession = {
@@ -246,14 +361,42 @@ export default function App() {
               displayName: customer.name,
               companyName: customer.company
             };
+
+            // Reset failure states
+            setFailedLoginAttempts(0);
+            setLockoutUntil(null);
+            setLockoutCountdown(0);
+
+            addAuditLog('Anmeldung erfolgreich', customer.username, `Erfolgreiche Anmeldung des Kunden ${customer.name}`, 'success');
+
             setSession(newSession);
             sessionStorage.setItem('crm_active_session', JSON.stringify(newSession));
             setActiveTab('dashboard');
           } else {
-            setLoginError('Ungültiges Passwort für diesen Kunden.');
+            const newAttempts = failedLoginAttempts + 1;
+            setFailedLoginAttempts(newAttempts);
+            if (newAttempts >= 5) {
+              setLockoutUntil(Date.now() + 30 * 1000);
+              setLockoutCountdown(30);
+              setLoginError('Sicherheitssperre aktiv: Zu viele fehlerhafte Anmeldeversuche. Bitte warten Sie 30 Sekunden.');
+              addAuditLog('Sicherheitssperre aktiviert', customer.username, '30 Sekunden Sperre aufgrund von 5 fehlerhaften Login-Versuchen aktiviert', 'warning');
+            } else {
+              setLoginError(`Ungültiges Passwort für diesen Kunden. (Versuch ${newAttempts} von 5)`);
+              addAuditLog('Anmeldung fehlgeschlagen', customer.username, `Fehlerhaftes Passwort eingegeben (Versuch ${newAttempts} von 5)`, 'failure');
+            }
           }
         } else {
-          setLoginError('Kundenbenutzername existiert nicht.');
+          const newAttempts = failedLoginAttempts + 1;
+          setFailedLoginAttempts(newAttempts);
+          if (newAttempts >= 5) {
+            setLockoutUntil(Date.now() + 30 * 1000);
+            setLockoutCountdown(30);
+            setLoginError('Sicherheitssperre aktiv: Zu viele fehlerhafte Anmeldeversuche. Bitte warten Sie 30 Sekunden.');
+            addAuditLog('Sicherheitssperre aktiviert', username || 'unbekannt', '30 Sekunden Sperre aufgrund von 5 fehlerhaften Login-Versuchen aktiviert', 'warning');
+          } else {
+            setLoginError(`Kundenbenutzername existiert nicht. (Versuch ${newAttempts} von 5)`);
+            addAuditLog('Anmeldung fehlgeschlagen', username || 'unbekannt', `Kundenbenutzername existiert nicht (Versuch ${newAttempts} von 5)`, 'failure');
+          }
         }
       }
     } catch (err) {
@@ -265,6 +408,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (session) {
+      addAuditLog('Abmeldung', session.userId, `Sitzung beendet von ${session.displayName}`, 'info');
+    }
     setSession(null);
     sessionStorage.removeItem('crm_active_session');
     setUsername('');
@@ -272,20 +418,33 @@ export default function App() {
     setLoginError(null);
   };
 
-  // --- INACTIVITY AUTO LOGOUT (15 MINUTES) ---
+  // --- INACTIVITY AUTO LOGOUT (15 MINUTES) WITH PROGRESS BAR ---
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(15 * 60);
+
   useEffect(() => {
     if (!session) return;
 
-    const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes of inactivity
-    let timeoutId: NodeJS.Timeout;
+    const INACTIVITY_TIMEOUT_SECONDS = 15 * 60; // 15 minutes
+    let secondsLeft = INACTIVITY_TIMEOUT_SECONDS;
+    setSecondsRemaining(secondsLeft);
+
+    let intervalId: NodeJS.Timeout;
 
     const resetTimer = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
+      secondsLeft = INACTIVITY_TIMEOUT_SECONDS;
+      setSecondsRemaining(secondsLeft);
+    };
+
+    // Update remaining time every second
+    intervalId = setInterval(() => {
+      secondsLeft -= 1;
+      setSecondsRemaining(secondsLeft);
+      if (secondsLeft <= 0) {
+        clearInterval(intervalId);
         handleLogout();
         alert('Sitzung abgelaufen: Sie wurden aufgrund von 15 Minuten Inaktivität automatisch abgemeldet, um Ihre Daten auf diesem Gerät zu schützen.');
-      }, INACTIVITY_TIMEOUT);
-    };
+      }
+    }, 1000);
 
     // Listen to user activity events
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
@@ -297,11 +456,8 @@ export default function App() {
       window.addEventListener(event, handleActivity);
     });
 
-    // Start initial timer
-    resetTimer();
-
     return () => {
-      clearTimeout(timeoutId);
+      clearInterval(intervalId);
       events.forEach(event => {
         window.removeEventListener(event, handleActivity);
       });
@@ -349,6 +505,8 @@ export default function App() {
         ...prev,
         customers: [...prev.customers, newCustomer]
       }));
+
+      addAuditLog('Benutzerregistrierung', regUsername, `Kunde '${regName}' (${regCompany || 'Privatkunde'}) hat sich registriert (wartet auf administrative Freigabe)`, 'info');
 
       setRegSuccess(true);
       // Reset registration form
@@ -412,6 +570,7 @@ export default function App() {
                 isOnline={isOnline}
                 onOnlineToggle={handleSetOnline}
                 onTabChange={setActiveTab}
+                secondsRemaining={secondsRemaining}
               />
             ) : (
               loggedInCustomer ? (
@@ -586,7 +745,7 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
-                                const pass = generateStrongPassword();
+                                const pass = generateStrongPassword(allowedSpecialSymbols.join(''));
                                 setRegPassword(pass);
                                 setShowRegPassword(true);
                               }}
@@ -615,6 +774,41 @@ export default function App() {
                             </button>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Sonderzeichen-Auswahl für Passwort-Generator */}
+                      <div className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900/60 mt-1">
+                        <span className="block text-[9px] font-mono text-slate-400 uppercase tracking-widest mb-1.5 font-bold">
+                          Sonderzeichen für Passwort-Generator:
+                        </span>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {['!', '@', '#', '$', '%', '&', '*', '?', '_', '-'].map((sym) => {
+                            const isSelected = allowedSpecialSymbols.includes(sym);
+                            return (
+                              <button
+                                key={sym}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setAllowedSpecialSymbols(allowedSpecialSymbols.filter(s => s !== sym));
+                                  } else {
+                                    setAllowedSpecialSymbols([...allowedSpecialSymbols, sym]);
+                                  }
+                                }}
+                                className={`h-7 rounded flex items-center justify-center font-mono text-xs font-bold transition-all border cursor-pointer ${
+                                  isSelected 
+                                    ? 'bg-blue-600/35 border-blue-500 text-blue-300 shadow-xs' 
+                                    : 'bg-slate-900/50 border-slate-850 text-slate-500 hover:border-slate-800 hover:text-slate-350'
+                                }`}
+                              >
+                                {sym}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <span className="block text-[8px] text-slate-500 font-mono mt-1 pr-1 text-right">
+                          Gewählt: {allowedSpecialSymbols.length > 0 ? allowedSpecialSymbols.join(' ') : 'Keine (nur Buchstaben/Zahlen)'}
+                        </span>
                       </div>
 
                       {/* Visual Strength Indicator */}
@@ -737,7 +931,8 @@ export default function App() {
                           placeholder={loginRole === 'admin' ? 'z.B. admin' : 'z.B. max.muster'}
                           value={username}
                           onChange={(e) => setUsername(e.target.value)}
-                          className="w-full bg-slate-900/60 border border-slate-800/90 text-white rounded-xl py-3 pl-11 pr-4 outline-none text-sm focus:border-blue-500 focus:bg-slate-900 transition-all font-mono"
+                          disabled={lockoutUntil !== null}
+                          className="w-full bg-slate-900/60 border border-slate-800/90 text-white rounded-xl py-3 pl-11 pr-4 outline-none text-sm focus:border-blue-500 focus:bg-slate-900 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </div>
                     </div>
@@ -754,7 +949,8 @@ export default function App() {
                           placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          className="w-full bg-slate-900/60 border border-slate-800/90 text-white rounded-xl py-3 pl-11 pr-4 outline-none text-sm focus:border-blue-500 focus:bg-slate-900 transition-all font-mono"
+                          disabled={lockoutUntil !== null}
+                          className="w-full bg-slate-900/60 border border-slate-800/90 text-white rounded-xl py-3 pl-11 pr-4 outline-none text-sm focus:border-blue-500 focus:bg-slate-900 transition-all font-mono disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </div>
                       {loginRole === 'customer' && (
@@ -773,10 +969,14 @@ export default function App() {
                     <button
                       id="btn-submit"
                       type="submit"
-                      disabled={isVerifying}
-                      className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 hover:scale-[1.015] hover:shadow-lg hover:shadow-blue-600/20 active:scale-[0.98] disabled:bg-blue-800 disabled:scale-100 disabled:shadow-none text-white font-semibold text-sm rounded-xl transition-all duration-300 shadow-md shadow-blue-600/10 cursor-pointer"
+                      disabled={isVerifying || lockoutUntil !== null}
+                      className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 hover:scale-[1.015] hover:shadow-lg hover:shadow-blue-600/20 active:scale-[0.98] disabled:bg-slate-800 disabled:scale-100 disabled:shadow-none text-white font-semibold text-sm rounded-xl transition-all duration-300 shadow-md shadow-blue-600/10 cursor-pointer disabled:text-slate-500 disabled:border-slate-700/50"
                     >
-                      {isVerifying ? 'Anmeldung wird geprüft...' : 'Im Portal anmelden'}
+                      {lockoutUntil !== null 
+                        ? `Temporär gesperrt (${lockoutCountdown}s)` 
+                        : isVerifying 
+                          ? 'Anmeldung wird geprüft...' 
+                          : 'Im Portal anmelden'}
                     </button>
 
                     {loginRole === 'customer' && (

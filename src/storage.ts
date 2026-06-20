@@ -38,7 +38,9 @@ export function loadCRMData(): CRMData {
       inventoryProducts: parsed.inventoryProducts || INITIAL_MOCK_DATA.inventoryProducts || [],
       suppliers: parsed.suppliers || INITIAL_MOCK_DATA.suppliers || [],
       stockMovements: parsed.stockMovements || INITIAL_MOCK_DATA.stockMovements || [],
-      supplierOrders: parsed.supplierOrders || INITIAL_MOCK_DATA.supplierOrders || []
+      supplierOrders: parsed.supplierOrders || INITIAL_MOCK_DATA.supplierOrders || [],
+      adminProfile: parsed.adminProfile || INITIAL_MOCK_DATA.adminProfile,
+      auditLogs: parsed.auditLogs || []
     };
   } catch (error) {
     console.error('Error loading CRM portal data', error);

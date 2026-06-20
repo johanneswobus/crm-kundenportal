@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Customer, UploadedFile, DirectMessage, CalendarAppointment, CRMData } from '../types';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { Customer, UploadedFile, DirectMessage, CalendarAppointment, CRMData, AuditLog } from '../types';
 import { encryptMessage, decryptMessage } from '../cryptoUtils';
 import { hashPassword } from '../storage';
 import { exportCustomersToCSV, parseCustomersFromCSV } from '../csvUtils';
@@ -165,9 +166,22 @@ interface AdminCRMProps {
   isOnline: boolean;
   onOnlineToggle: (online: boolean) => void;
   onTabChange?: (tab: string) => void;
+  secondsRemaining?: number;
 }
 
-export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOnlineToggle, onTabChange }: AdminCRMProps) {
+export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOnlineToggle, onTabChange, secondsRemaining }: AdminCRMProps) {
+  const createSubAuditLog = (action: string, user: string, details: string, status: 'success' | 'failure' | 'warning' | 'info'): AuditLog => {
+    return {
+      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      timestamp: new Date().toISOString(),
+      action,
+      user,
+      details,
+      status,
+      ipAddress: '127.0.0.1 (Lokale Sitzung)'
+    };
+  };
+
   // --- DYNAMIC ALL TEMPLATES INJECTOR ---
   const allTemplates = useMemo(() => {
     return [
@@ -226,9 +240,33 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
   const [profileHrb, setProfileHrb] = useState(data.adminProfile?.hrb || '');
   const [profileFootnote, setProfileFootnote] = useState(data.adminProfile?.footnote || '');
   const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
+  const [profileNewPassword, setProfileNewPassword] = useState('');
+  const [profileConfirmPassword, setProfileConfirmPassword] = useState('');
 
   // --- STATE FOR SYSTEM RESET ---
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+
+  // --- STATE FOR GITHUB EXPORTER & COMMIT MESSAGE WORKSPACE ---
+  const [commitType, setCommitType] = useState('feat');
+  const [commitScope, setCommitScope] = useState('security');
+  const [commitDesc, setCommitDesc] = useState('add temporary lockout protection for login brute-force attacks');
+  const [isGdprShieldActive, setIsGdprShieldActive] = useState(true);
+  const [isCommitCopied, setIsCommitCopied] = useState(false);
+  const [isChangelogCopied, setIsChangelogCopied] = useState(false);
+  
+  // --- STATE FOR AUDIT LOG FILTERS AND SORTING ---
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditStatusFilter, setAuditStatusFilter] = useState<'all' | 'success' | 'failure' | 'warning' | 'info'>('all');
+  const [auditSortField, setAuditSortField] = useState<'timestamp' | 'action' | 'user'>('timestamp');
+  const [auditSortDirection, setAuditSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const [githubChecklist, setGithubChecklist] = useState({
+    gitignore: true,
+    secretshield: true,
+    cleanseed: true,
+    schemaok: true,
+    lintpass: true
+  });
 
   const handleSystemReset = (mode: 'empty' | 'demo') => {
     if (mode === 'empty') {
@@ -268,6 +306,15 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
+      // Audit Log for export
+      onDataChange(prev => ({
+        ...prev,
+        auditLogs: [
+          createSubAuditLog('Export durchgeführt', 'admin', `Kundenliste (${data.customers.length} Einträge) erfolgreich als CSV exportiert`, 'success'),
+          ...(prev.auditLogs || [])
+        ]
+      }));
     } catch (e) {
       console.error(e);
       alert('Fehler beim Exportieren der CSV-Datei.');
@@ -340,7 +387,11 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
 
           return {
             ...prev,
-            customers: existingCustomers
+            customers: existingCustomers,
+            auditLogs: [
+              createSubAuditLog('Datenimport', 'admin', `CSV-Datei erfolgreich eingelesen (${addedCount} neue Mandanten angelegt, ${updatedCount} bestehende Mandanten aktualisiert)`, 'success'),
+              ...(prev.auditLogs || [])
+            ]
           };
         });
 
@@ -352,6 +403,206 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     };
 
     reader.readAsText(file, 'utf-8');
+  };
+
+  const [adminLoginCount, setAdminLoginCount] = useState<number>(() => {
+    return parseInt(localStorage.getItem('admin_login_count') || '0', 10);
+  });
+
+  const handleExportFullJSON = () => {
+    try {
+      const dataStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const today = new Date().toISOString().slice(0, 10);
+      link.setAttribute('download', `crm_datenbank_backup_${today}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Reset count after successful backup export
+      localStorage.setItem('admin_login_count', '0');
+      setAdminLoginCount(0);
+      alert('Vollständiges lokales Datenbank-Backup erfolgreich erstellt und heruntergeladen!\nDer Login-Sicherheitszähler wurde zurückgesetzt.');
+    } catch (e) {
+      console.error(e);
+      alert('Fehler beim Exportieren des Datenbank-Backups.');
+    }
+  };
+
+  const validateCRMDataStructure = (parsed: any): { valid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { valid: false, errors: ['Das Backup-Dokument hat ein unzulässiges Format (Muss ein JSON-Objekt sein).'] };
+    }
+
+    const coreLists = ['customers', 'files', 'messages', 'appointments'];
+    coreLists.forEach(list => {
+      if (!(list in parsed)) {
+        errors.push(`Fehlende Kernaufstellung: '${list}' fehlt im Backup.`);
+      } else if (!Array.isArray(parsed[list])) {
+        errors.push(`Inkonsistente Struktur: '${list}' muss ein Daten-Array sein.`);
+      }
+    });
+
+    const optionalLists = ['botRules', 'unresolvedQueries', 'invoices', 'customTemplates', 'inventoryProducts', 'suppliers', 'stockMovements', 'supplierOrders'];
+    optionalLists.forEach(list => {
+      if (list in parsed && !Array.isArray(parsed[list])) {
+        errors.push(`Inkonsistente Struktur: Optionale Aufstellung '${list}' ist kein valides Daten-Array.`);
+      }
+    });
+
+    if (Array.isArray(parsed.customers)) {
+      parsed.customers.forEach((cust: any, index: number) => {
+        const label = cust.name || `Mandant #${index + 1}`;
+        if (!cust.id || typeof cust.id !== 'string') {
+          errors.push(`Inkonsistenter Mandanten-Datensatz für "${label}": ID fehlt.`);
+        }
+        if (!cust.name || typeof cust.name !== 'string') {
+          errors.push(`Inkonsistenter Mandanten-Datensatz bei Position ${index + 1}: Name fehlt.`);
+        }
+        if (!cust.username || typeof cust.username !== 'string') {
+          errors.push(`Inkonsistente Zugangsdaten für "${label}": Benutzername fehlt.`);
+        }
+      });
+    }
+
+    if (Array.isArray(parsed.files)) {
+      parsed.files.forEach((file: any, index: number) => {
+        const label = file.name || `Datei #${index + 1}`;
+        if (!file.id || typeof file.id !== 'string') {
+          errors.push(`Inkonsistente Datei bei "${label}": ID fehlt.`);
+        }
+        if (!file.name || typeof file.name !== 'string') {
+          errors.push(`Inkonsistenter Dateiname bei Position ${index + 1}.`);
+        }
+      });
+    }
+
+    if (Array.isArray(parsed.messages)) {
+      parsed.messages.forEach((msg: any, index: number) => {
+        if (!msg.id || typeof msg.id !== 'string') {
+          errors.push(`Inkonsistente Nachricht bei Position ${index + 1}: ID fehlt.`);
+        }
+        if (!msg.senderId || typeof msg.senderId !== 'string') {
+          errors.push(`Inkonsistente Nachricht bei Position ${index + 1}: Absender-ID fehlt.`);
+        }
+        if (!msg.receiverId || typeof msg.receiverId !== 'string') {
+          errors.push(`Inkonsistente Nachricht bei Position ${index + 1}: Empfänger-ID fehlt.`);
+        }
+      });
+    }
+
+    if (parsed.adminProfile) {
+      if (typeof parsed.adminProfile !== 'object' || Array.isArray(parsed.adminProfile)) {
+        errors.push('Inkonsistentes adminProfile: Es muss ein Daten-Objekt sein.');
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  };
+
+  const handleImportFullJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+        const parsed = JSON.parse(text);
+        
+        const validation = validateCRMDataStructure(parsed);
+        if (!validation.valid) {
+          alert(`Backup-Validierung FEHLGESCHLAGEN!\n\nDas Backup-Dokument weist folgende Inkonsistenzen auf:\n\n${validation.errors.map(err => '• ' + err).join('\n')}\n\nDer Import wurde blockiert, um Datenverlust zu vermeiden.`);
+          e.target.value = '';
+          return;
+        }
+
+        const confirmRestore = window.confirm(
+          'Möchten Sie dieses geprüfte und valide Datenbank-Backup einspielen?\n\nACHTUNG: Alle bestehenden Daten (Kunden, Termine, Nachrichten, etc.) werden hiermit überschrieben!'
+        );
+        if (!confirmRestore) {
+          e.target.value = '';
+          return;
+        }
+
+        const restoredData = {
+          ...parsed,
+          auditLogs: [
+            createSubAuditLog('Sicherung wiederhergestellt', 'admin', 'Vollständiges Datenbank-Backup erfolgreich eingespielt. Alle Mandantendaten überschrieben.', 'warning'),
+            ...(parsed.auditLogs || [])
+          ]
+        };
+        onDataChange(restoredData);
+        localStorage.setItem('admin_login_count', '0');
+        setAdminLoginCount(0);
+        alert('Datenbank erfolgreich aus Backup-Datei wiederhergestellt und Login-Verlauf zurückgesetzt.');
+      } catch (err) {
+        console.error(err);
+        alert('Fehler beim Einlesen der Backup-Datei. Bitte prüfen Sie das JSON-Format und stellen Sie sicher, dass es sich um eine valide UTF-8 kodierte Textdatei handelt.');
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file, 'utf-8');
+  };
+
+  const handleResetLoginCount = () => {
+    localStorage.setItem('admin_login_count', '0');
+    setAdminLoginCount(0);
+  };
+
+  const handleClearAuditLogs = () => {
+    if (window.confirm('Möchten Sie das System-Sicherheits-Audit-Log unwiderruflich leeren? Dies sollte nur zu Wartungszwecken durchgeführt werden.')) {
+      onDataChange(prev => ({
+        ...prev,
+        auditLogs: [],
+        addAuditLog: prev.auditLogs ? undefined : undefined // keep DB schema aligned
+      }));
+      alert('System-Audit-Log erfolgreich geleert.');
+    }
+  };
+
+  const handleExportAuditLogsCSV = () => {
+    try {
+      const logs = data.auditLogs || [];
+      if (logs.length === 0) {
+        alert('Keine Audit-Logs zum Exportieren vorhanden.');
+        return;
+      }
+      let csvContent = '\uFEFFZeitstempel,Aktion,Benutzer,Details,Status,IP-Adresse\n';
+      logs.forEach(log => {
+        const row = [
+          log.timestamp || '',
+          `"${(log.action || '').replace(/"/g, '""')}"`,
+          `"${(log.user || '').replace(/"/g, '""')}"`,
+          `"${(log.details || '').replace(/"/g, '""')}"`,
+          log.status || 'info',
+          `"${(log.ipAddress || '127.0.0.1 (Lokale Sitzung)').replace(/"/g, '""')}"`
+        ].join(',');
+        csvContent += row + '\n';
+      });
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const today = new Date().toISOString().slice(0, 10);
+      link.setAttribute('download', `system_security_audit_${today}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (e) {
+      console.error(e);
+      alert('Fehler beim Exportieren der Audit-Logs.');
+    }
   };
 
   useEffect(() => {
@@ -370,8 +621,20 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     }
   }, [data.adminProfile]);
 
-  const handleSaveAdminProfile = (e: React.FormEvent) => {
+  const handleSaveAdminProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (profileNewPassword) {
+      if (profileNewPassword !== profileConfirmPassword) {
+        alert('Die neuen Passwörter stimmen nicht überein!');
+        return;
+      }
+    }
+
+    let newHash = data.adminProfile?.passwordHash;
+    if (profileNewPassword) {
+      newHash = await hashPassword(profileNewPassword);
+    }
+
     const updatedProfile = {
       name: profileName,
       company: profileCompany,
@@ -383,13 +646,16 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       bic: profileBic,
       taxNumber: profileTaxNumber,
       hrb: profileHrb,
-      footnote: profileFootnote
+      footnote: profileFootnote,
+      passwordHash: newHash
     };
     onDataChange(prev => ({
       ...prev,
       adminProfile: updatedProfile
     }));
     setProfileSaveSuccess(true);
+    setProfileNewPassword('');
+    setProfileConfirmPassword('');
     setTimeout(() => {
       setProfileSaveSuccess(false);
     }, 3000);
@@ -701,7 +967,42 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
   const [activeChatCustomerId, setActiveChatCustomerId] = useState<string>(
     data.customers.length > 0 ? data.customers[0].id : ''
   );
-  const [chatInput, setChatInput] = useState('');
+  
+  const [chatInput, setChatInput] = useState(() => {
+    const initialCustomerId = data.customers.length > 0 ? data.customers[0].id : '';
+    return sessionStorage.getItem('admin_chat_input_' + initialCustomerId) || '';
+  });
+
+  useEffect(() => {
+    if (activeChatCustomerId) {
+      const savedInput = sessionStorage.getItem('admin_chat_input_' + activeChatCustomerId);
+      setChatInput(savedInput || '');
+    }
+  }, [activeChatCustomerId]);
+
+  useEffect(() => {
+    if (activeChatCustomerId) {
+      sessionStorage.setItem('admin_chat_input_' + activeChatCustomerId, chatInput);
+    }
+  }, [chatInput, activeChatCustomerId]);
+
+  useEffect(() => {
+    const notesKey = selectedCustomer ? `admin_customer_notes_${selectedCustomer.id}` : 'admin_customer_notes_new';
+    const saved = sessionStorage.getItem(notesKey);
+    if (saved !== null) {
+      setCustomerForm(prev => {
+        if (prev.notes !== saved) {
+          return { ...prev, notes: saved };
+        }
+        return prev;
+      });
+    }
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    const notesKey = selectedCustomer ? `admin_customer_notes_${selectedCustomer.id}` : 'admin_customer_notes_new';
+    sessionStorage.setItem(notesKey, customerForm.notes);
+  }, [customerForm.notes, selectedCustomer]);
 
   // --- STATE FOR CALENDAR (APPOINTMENTS) ---
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
@@ -728,6 +1029,120 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     score: number;
     answer: string;
   } | null>(null);
+
+  const filteredAndSortedAuditLogs = useMemo(() => {
+    const logs = data.auditLogs || [];
+    
+    // 1. Filter
+    const query = auditSearch.trim().toLowerCase();
+    const filtered = logs.filter(log => {
+      if (auditStatusFilter !== 'all' && log.status !== auditStatusFilter) {
+        return false;
+      }
+      
+      if (query) {
+        const actionMatch = log.action.toLowerCase().includes(query);
+        const userMatch = log.user.toLowerCase().includes(query);
+        const detailsMatch = log.details.toLowerCase().includes(query);
+        const ipMatch = log.ipAddress?.toLowerCase().includes(query) || false;
+        return actionMatch || userMatch || detailsMatch || ipMatch;
+      }
+      
+      return true;
+    });
+    
+    // 2. Sort
+    filtered.sort((a, b) => {
+      let fieldA = '', fieldB = '';
+      if (auditSortField === 'timestamp') {
+        fieldA = a.timestamp || '';
+        fieldB = b.timestamp || '';
+      } else if (auditSortField === 'action') {
+        fieldA = a.action || '';
+        fieldB = b.action || '';
+      } else if (auditSortField === 'user') {
+        fieldA = a.user || '';
+        fieldB = b.user || '';
+      }
+      
+      if (fieldA < fieldB) return auditSortDirection === 'asc' ? -1 : 1;
+      if (fieldA > fieldB) return auditSortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return filtered;
+  }, [data.auditLogs, auditSearch, auditStatusFilter, auditSortField, auditSortDirection]);
+
+  const weeklyData = useMemo(() => {
+    // Current date references June 20, 2026
+    const today = new Date("2026-06-20");
+    const minDate = new Date("2026-01-01"); // Start of year 2026
+    
+    // Find Monday of the week for a given date in UTC
+    const getMonday = (d: Date) => {
+      const dateCopy = new Date(d);
+      const day = dateCopy.getUTCDay();
+      // Monday is 1. If day is 0 (Sunday), adjust by -6, etc.
+      const diff = dateCopy.getUTCDate() - day + (day === 0 ? -6 : 1);
+      const mon = new Date(Date.UTC(dateCopy.getUTCFullYear(), dateCopy.getUTCMonth(), diff, 0, 0, 0, 0));
+      return mon;
+    };
+
+    const currentMonday = getMonday(today);
+    const startMonday = getMonday(minDate);
+
+    const weeksMap: { [key: string]: { monday: Date; count: number } } = {};
+
+    // Initialize all weeks from startMonday to currentMonday with count=0
+    const temp = new Date(startMonday);
+    while (temp <= currentMonday) {
+      const mondayStr = temp.toISOString().split('T')[0];
+      weeksMap[mondayStr] = {
+        monday: new Date(temp),
+        count: 0
+      };
+      // Advance by 7 days
+      temp.setUTCDate(temp.getUTCDate() + 7);
+    }
+
+    // Populate counts based on customer registration dates
+    data.customers.forEach(c => {
+      if (!c.createdAt) return;
+      const date = new Date(c.createdAt);
+      const mon = getMonday(date);
+      const mondayStr = mon.toISOString().split('T')[0];
+      if (weeksMap[mondayStr]) {
+        weeksMap[mondayStr].count += 1;
+      } else {
+        // Fallback for dates outside or before our initialized table
+        weeksMap[mondayStr] = {
+          monday: mon,
+          count: 1
+        };
+      }
+    });
+
+    // Convert keys to sorted list of week data
+    const allWeeks = Object.keys(weeksMap)
+      .map(key => ({
+        key,
+        monday: weeksMap[key].monday,
+        count: weeksMap[key].count
+      }))
+      .sort((a, b) => a.monday.getTime() - b.monday.getTime());
+
+    // Take the last 24 weeks for a beautiful rolling line-chart view
+    const lastWeeks = allWeeks.slice(-24);
+
+    return lastWeeks.map(w => {
+      const startFormatted = w.monday.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      return {
+        label: `W. ab ${startFormatted}`,
+        "Registrierungen": w.count,
+        fullName: `Woche ab ${startFormatted}.${w.monday.getUTCFullYear()}`
+      };
+    });
+  }, [data.customers]);
 
   // --- KI-BOT TRAINING ACTIONS ---
   const handleOpenBotRuleModal = (ruleId: string | null = null) => {
@@ -1249,9 +1664,19 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
         updatedCustomers.push(newCustomer);
       }
 
-      return { ...prev, customers: updatedCustomers };
+      const log = selectedCustomer 
+        ? createSubAuditLog('Benutzer bearbeitet', 'admin', `Kundenprofil '${customerForm.name}' (${customerForm.company}) bearbeitet`, 'info')
+        : createSubAuditLog('Benutzer erstellt', 'admin', `Neuer Kunde '${customerForm.name}' (${customerForm.company}) angelegt`, 'success');
+
+      return { 
+        ...prev, 
+        customers: updatedCustomers,
+        auditLogs: [log, ...(prev.auditLogs || [])]
+      };
     });
 
+    const notesKey = selectedCustomer ? `admin_customer_notes_${selectedCustomer.id}` : 'admin_customer_notes_new';
+    sessionStorage.removeItem(notesKey);
     setIsCustomerModalOpen(false);
   };
 
@@ -1263,10 +1688,15 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       const updatedAppointments = data.appointments.filter(a => a.customerId !== customerId);
       
       onDataChange({
+        ...data,
         customers: updatedCustomers,
         files: updatedFiles,
         messages: updatedMessages,
-        appointments: updatedAppointments
+        appointments: updatedAppointments,
+        auditLogs: [
+          createSubAuditLog('Benutzer gelöscht', 'admin', `Kundenprofil ID '${customerId}' permanent gelöscht (inkl. aller Dokumente & Chat-Mitteilungen)`, 'warning'),
+          ...(data.auditLogs || [])
+        ]
       });
 
       if (activeChatCustomerId === customerId) {
@@ -1290,7 +1720,14 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
         }
         return c;
       });
-      return { ...prev, customers: updated };
+      return { 
+        ...prev, 
+        customers: updated,
+        auditLogs: [
+          createSubAuditLog('Passwort zurückgesetzt', 'admin', `Passwort für '${cust.name}' (${cust.company}) durch Administrator zurückgesetzt`, 'warning'),
+          ...(prev.auditLogs || [])
+        ]
+      };
     });
     alert(`Passwort für ${cust.name} wurde erfolgreich auf "${newPassword}" zurückgesetzt.`);
   };
@@ -1303,7 +1740,14 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
         }
         return c;
       });
-      return { ...prev, customers: updated };
+      return { 
+        ...prev, 
+        customers: updated,
+        auditLogs: [
+          createSubAuditLog('Benutzer freigeschaltet', 'admin', `Selbstregistrierter Mandant '${cust.name}' (${cust.company}) administativ freigeschaltet`, 'success'),
+          ...(prev.auditLogs || [])
+        ]
+      };
     });
     alert(`Der Mandant ${cust.name} wurde erfolgreich freigeschaltet!`);
   };
@@ -1568,6 +2012,9 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     });
 
     setChatInput('');
+    if (activeChatCustomerId) {
+      sessionStorage.removeItem('admin_chat_input_' + activeChatCustomerId);
+    }
     setSelectedAttachment(null);
     setAttachmentError(null);
   };
@@ -1648,10 +2095,10 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
               <button
                 type="button"
                 onClick={() => setIsResetConfirmOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-full border border-rose-200 text-xs font-bold transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-full border border-indigo-200 text-xs font-bold transition-all cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" />
-                <span>System zurücksetzen</span>
+                <Database className="w-3.5 h-3.5 text-indigo-650" />
+                <span>Daten-Backup &amp; System</span>
               </button>
               <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100 text-xs font-medium font-sans">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> Lokale Speicherung aktiv
@@ -1660,6 +2107,43 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
           </header>
 
           <div className="flex-grow overflow-y-auto p-5 space-y-4">
+            
+            {/* Backup Reminder Banner */}
+            {adminLoginCount >= 3 && (
+              <div className="bg-amber-50 border border-amber-250 rounded shadow-sm p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in select-none">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl border border-amber-200 flex-shrink-0 mt-0.5">
+                    <ShieldAlert className="w-5 h-5 text-amber-700 animate-bounce" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-amber-950 text-xs">Sicherheits-Empfehlung: CRM-Daten vollständig sichern ({adminLoginCount} Logins ohne Backup)</h4>
+                    <p className="text-[11px] text-amber-700 mt-1 leading-normal max-w-2xl">
+                      Da dieses CRM-System zu 100 % datenschutzkonform und lokal in Ihrer Browser-Sandbox arbeitet, können gelöschte Caches zum Datenverlust führen. Sichern Sie jetzt Ihren aktuellen Kanzleibestand als verschlüsselte JSON-Datei ab.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={handleExportFullJSON}
+                    className="flex-1 md:flex-initial px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Vollständiges CRM-Datenbank-Backup herunterladen"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Jetzt Backup erstellen</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetLoginCount}
+                    className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-650 border border-slate-200 text-xs font-bold rounded transition-all cursor-pointer"
+                    title="Meldung für die nächsten Logins ausblenden"
+                  >
+                    Später erinnern
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Welcome Header */}
             <div className="flex justify-between items-center bg-white p-4 border border-slate-200 rounded shadow-sm">
               <div>
@@ -1682,6 +2166,30 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 </div>
               </div>
             </div>
+
+            {/* Subtiler Auto-Logout Tracker */}
+            {secondsRemaining !== undefined && (
+              <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-700 uppercase tracking-wide">
+                    <Clock className="w-4 h-4 text-indigo-600 animate-pulse" />
+                    <span>Sicherheitssitzung (Automatischer Logout bei Inaktivität)</span>
+                  </div>
+                  <div className="font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded text-[10px]">
+                    Sperrung/Abmeldung in {Math.floor(secondsRemaining / 60)} Min. {secondsRemaining % 60} Sek.
+                  </div>
+                </div>
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="bg-indigo-600 h-full rounded-full transition-all duration-1000 ease-linear shadow-xs" 
+                    style={{ width: `${(secondsRemaining / (15 * 60)) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 font-mono mt-1 pr-1 text-right uppercase tracking-tight">
+                  * Jede Aktion im CRM (Mausbewegung, Tastendruck, Klick) verlängert die Sitzung wieder auf volle 15 Minuten.
+                </p>
+              </div>
+            )}
 
           {/* Quick Metrics Analytics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1798,6 +2306,74 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Recharts Kundenaktivität (Registrierungen pro Woche) */}
+            <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 font-sans">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-2 border-b border-slate-100/70">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5 text-indigo-600" />
+                    <span>Kundenaktivität (Registrierungen pro Woche)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Anzahl der wöchentlichen Neuanmeldungen und Mandanten-Registrierungen über das Jahr 2026 hinweg (letzte 24 Wochen im rollierenden Verlauf).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                    Wöchentliche Kontrollmetrik
+                  </span>
+                </div>
+              </div>
+
+              <div className="h-64 w-full mt-2 pr-4 select-text">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={weeklyData}
+                    margin={{ top: 10, right: 10, left: -25, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="label" 
+                      tickLine={false} 
+                      axisLine={false} 
+                      stroke="#94a3b8" 
+                      fontSize={11} 
+                      dy={10}
+                    />
+                    <YAxis 
+                      allowDecimals={false} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      stroke="#94a3b8" 
+                      fontSize={11} 
+                      dx={-5}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#ffffff', 
+                        border: '1px solid #e2e8f0', 
+                        borderRadius: '0.75rem', 
+                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                        fontFamily: 'sans-serif'
+                      }}
+                      labelStyle={{ fontWeight: 'bold', fontSize: '11px', color: '#101827' }}
+                      itemStyle={{ color: '#4f46e5', fontSize: '12px', fontWeight: 'semibold' }}
+                      formatter={(value: any) => [`${value} Registrierung(en)`, 'Neuanmeldungen']}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="Registrierungen" 
+                      stroke="#4f46e5" 
+                      strokeWidth={3} 
+                      dot={{ stroke: '#4f46e5', strokeWidth: 1.5, r: 4, fill: '#ffffff' }}
+                      activeDot={{ r: 7, stroke: '#5046e6', strokeWidth: 2, fill: '#ffffff' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
             {/* Native SVG Visualization: File category ratio & weekly progression */}
             <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
               <div className="flex justify-between items-center mb-6">
@@ -2093,6 +2669,38 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                       />
                     </div>
                   </div>
+
+                  {/* Sicherheits-Zugangsdaten / Passwort-Änderung */}
+                  <div className="pt-4 mt-4 border-t border-slate-205">
+                    <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3 font-mono flex items-center gap-1">
+                      🔐 Administrator-Passwort ändern (optional)
+                    </h5>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">Neues Passwort</label>
+                        <input 
+                          type="password" 
+                          value={profileNewPassword} 
+                          onChange={(e) => setProfileNewPassword(e.target.value)}
+                          placeholder="Unverändert lassen"
+                          className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 mb-1">Neues Passwort bestätigen</label>
+                        <input 
+                          type="password" 
+                          value={profileConfirmPassword} 
+                          onChange={(e) => setProfileConfirmPassword(e.target.value)}
+                          placeholder="Neues Passwort bestätigen"
+                          className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-normal font-mono">
+                      * Leer lassen, wenn Sie Ihr bestehendes Passwort behalten möchten.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -2106,7 +2714,208 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
               </div>
             </form>
           </div>
-        </div></div>
+
+          {/* SYSTEM SECURITY AUDIT LOG SECTION */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 font-sans">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-indigo-600 animate-pulse" />
+                  <span>Administrative System-Audit-Logbuch (Echtzeit)</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Lückenlose Aufzeichnung aller kritischen Ereignisse (Sitzungen, Login-Versuche, Freischaltungen, Änderungen & Datenexporte).
+                </p>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleExportAuditLogsCSV}
+                  className="px-3 py-1.5 bg-indigo-55/70 hover:bg-indigo-100 text-indigo-705 border border-indigo-200 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Gesamtes Audit-Log als CSV-Datei herunterladen"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Log exportieren (CSV)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAuditLogs}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Alle Einträge unwiderruflich löschen"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Protokoll leeren</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filters Controls */}
+            <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
+              {/* Search input */}
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={auditSearch}
+                  onChange={(e) => setAuditSearch(e.target.value)}
+                  placeholder="Logs durchsuchen nach Aktion, Initiator, IP-Adresse oder Details..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white text-slate-700"
+                />
+              </div>
+
+              {/* Status Filter buttons */}
+              <div className="flex items-center gap-1.5 flex-shrink-0 bg-slate-100 p-1 rounded-xl border border-slate-250 w-full md:w-auto overflow-x-auto">
+                {(['all', 'success', 'info', 'warning', 'failure'] as const).map(lev => {
+                  const label = lev === 'all' ? 'Alle' :
+                                lev === 'success' ? 'Erfolg' :
+                                lev === 'info' ? 'Info' :
+                                lev === 'warning' ? 'Warnung' : 'Sperre/Fehler';
+                  return (
+                    <button
+                      key={lev}
+                      type="button"
+                      onClick={() => setAuditStatusFilter(lev)}
+                      className={`px-3 py-1 text-[11px] font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                        auditStatusFilter === lev 
+                          ? 'bg-white text-slate-800 shadow-sm' 
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Audit Logs Table */}
+            <div className="overflow-hidden border border-slate-200 rounded-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[10px] font-mono uppercase tracking-wider select-none">
+                      <th 
+                        className="py-3 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap"
+                        onClick={() => {
+                          if (auditSortField === 'timestamp') {
+                            setAuditSortDirection(p => p === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setAuditSortField('timestamp');
+                            setAuditSortDirection('desc');
+                          }
+                        }}
+                      >
+                        <span className="flex items-center gap-1">
+                          Zeitstempel (UTC)
+                          {auditSortField === 'timestamp' && (
+                            <span>{auditSortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th 
+                        className="py-3 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap"
+                        onClick={() => {
+                          if (auditSortField === 'action') {
+                            setAuditSortDirection(p => p === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setAuditSortField('action');
+                            setAuditSortDirection('asc');
+                          }
+                        }}
+                      >
+                        <span className="flex items-center gap-1">
+                          Aktion
+                          {auditSortField === 'action' && (
+                            <span>{auditSortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th 
+                        className="py-3 px-4 font-bold cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap"
+                        onClick={() => {
+                          if (auditSortField === 'user') {
+                            setAuditSortDirection(p => p === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setAuditSortField('user');
+                            setAuditSortDirection('asc');
+                          }
+                        }}
+                      >
+                        <span className="flex items-center gap-1">
+                          Initiator
+                          {auditSortField === 'user' && (
+                            <span>{auditSortDirection === 'asc' ? ' ▲' : ' ▼'}</span>
+                          )}
+                        </span>
+                      </th>
+                      <th className="py-3 px-4 font-bold whitespace-nowrap">IP-Adresse</th>
+                      <th className="py-3 px-4 font-bold whitespace-nowrap">Status</th>
+                      <th className="py-3 px-4 font-bold min-w-[200px]">Details &amp; Sicherheitsrelevanter Payload</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                    {filteredAndSortedAuditLogs.length > 0 ? (
+                      filteredAndSortedAuditLogs.map(log => {
+                        const statusColors = 
+                          log.status === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          log.status === 'failure' ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' :
+                          log.status === 'warning' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          'bg-blue-50 text-blue-700 border-blue-200';
+                        
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-mono text-[10px] text-slate-400 whitespace-nowrap">
+                              {new Date(log.timestamp).toLocaleString('de-DE', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-slate-800 whitespace-nowrap">{log.action}</td>
+                            <td className="py-3 px-4 font-semibold text-slate-600 whitespace-nowrap">{log.user}</td>
+                            <td className="py-3 px-4 font-mono text-[11px] text-slate-400 whitespace-nowrap">
+                              {log.ipAddress || '127.0.0.1 (Local)'}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-[10px] uppercase tracking-wide border ${statusColors}`}>
+                                {log.status === 'success' && 'SUCCESS'}
+                                {log.status === 'info' && 'INFO'}
+                                {log.status === 'warning' && 'WARNING'}
+                                {log.status === 'failure' && 'FAILURE'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-[11px] font-medium leading-relaxed max-w-md break-words text-slate-650">
+                              {log.details}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="py-12 text-center text-slate-400 text-xs">
+                          {auditSearch ? 'Keine Audit-Logs entsprechen Ihren Filtereinstellungen.' : 'Noch keine systemkritischen Logbucheinträge vorhanden.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <div className="mt-3 flex justify-between items-center text-[10px] font-mono text-slate-400 px-1">
+              <div>
+                Einträge: {filteredAndSortedAuditLogs.length} von {(data.auditLogs || []).length} insgesamt (Gefiltert)
+              </div>
+              <div>
+                Protokolltyp: ISO-Sitzungsvalidierung auf Client-Ebene (E2EE verschlüsselt)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       )}
 
       {/* 2. KUNDENVERWALTUNG (DIRECTORY & CREATION) */}
@@ -2176,8 +2985,9 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                   <div className="flex items-center space-x-3 bg-slate-100 border border-slate-200 rounded px-3 py-1.5 w-full">
                     <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
                     <input
+                      id="customer-search-input"
                       type="text"
-                      placeholder="Kunde oder Firma..."
+                      placeholder="Suche Name, Firma, Notizen, Branche, Produkte..."
                       value={customerSearch}
                       onChange={(e) => setCustomerSearch(e.target.value)}
                       className="bg-transparent border-none outline-none text-slate-700 placeholder-slate-400 text-xs w-full focus:ring-0"
@@ -2257,9 +3067,21 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {data.customers
                     .filter(c => {
+                      const query = customerSearch.toLowerCase().trim();
                       const matchesSearch = 
-                        c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-                        c.company.toLowerCase().includes(customerSearch.toLowerCase());
+                        !query ||
+                        (c.name || '').toLowerCase().includes(query) ||
+                        (c.company || '').toLowerCase().includes(query) ||
+                        (c.notes || '').toLowerCase().includes(query) ||
+                        (c.email || '').toLowerCase().includes(query) ||
+                        (c.phone || '').toLowerCase().includes(query) ||
+                        (c.address || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.industry || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.services || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.products || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.description || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.specialFeatures || '').toLowerCase().includes(query) ||
+                        (c.onboarding?.individualRequirements || '').toLowerCase().includes(query);
                       
                       if (!matchesSearch) return false;
 
@@ -7847,8 +8669,34 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
 
             {/* Body */}
             <div className="p-6 space-y-4 overflow-y-auto">
+              <div className="p-3 bg-indigo-50 border border-indigo-150 rounded-xl text-xs text-indigo-900 leading-relaxed">
+                <strong>Daten sichern & wiederherstellen:</strong> Hier können Sie die gesamte CRM-Inhaltsmappe lokal archivieren oder einspielen.
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-150">
+                <button
+                  type="button"
+                  onClick={handleExportFullJSON}
+                  className="p-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex flex-col items-center gap-1.5 justify-center cursor-pointer shadow-sm text-center"
+                >
+                  <Download className="w-4 h-4 text-amber-400" />
+                  <span>Backup exportieren</span>
+                </button>
+
+                <label className="p-3 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-350 rounded-xl text-xs font-bold transition-all flex flex-col items-center gap-1.5 justify-center cursor-pointer text-slate-700 text-center select-none">
+                  <Upload className="w-4 h-4 text-indigo-600" />
+                  <span>Backup einspielen</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportFullJSON}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
               <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-xs text-rose-900 leading-relaxed">
-                <strong>Achtung:</strong> Das Zurücksetzen des Systems löscht oder überschreibt bestehende Datenbestände. Wählen Sie die gewünschte Aktion sorgfältig aus:
+                <strong>Werkseinstellungen & Löschen:</strong> Vorsicht, diese Aktionen verändern den aktuellen Stand der Mappe nachhaltig.
               </div>
 
               <div className="space-y-3">

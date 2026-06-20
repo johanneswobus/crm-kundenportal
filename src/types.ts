@@ -213,6 +213,7 @@ export interface AdminProfile {
   taxNumber: string;
   hrb?: string;
   footnote?: string;
+  passwordHash?: string;
 }
 
 export interface InventoryProduct {
@@ -266,6 +267,16 @@ export interface SupplierOrder {
   deliveryDate?: string;
 }
 
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  action: string;
+  user: string;
+  details: string;
+  status: 'success' | 'failure' | 'warning' | 'info';
+  ipAddress: string;
+}
+
 export interface CRMData {
   customers: Customer[];
   files: UploadedFile[];
@@ -280,4 +291,5 @@ export interface CRMData {
   suppliers?: Supplier[];
   stockMovements?: StockMovement[];
   supplierOrders?: SupplierOrder[];
+  auditLogs?: AuditLog[];
 }

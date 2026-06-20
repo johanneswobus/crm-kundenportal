@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Customer, UploadedFile, DirectMessage, CalendarAppointment, CRMData, PortfolioContract } from '../types';
 import { encryptMessage, decryptMessage } from '../cryptoUtils';
 import { ROADMAP_TEMPLATES } from '../templates';
@@ -300,7 +300,14 @@ END:VCARD`;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- STATE FOR MESSAGES ---
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState(() => {
+    return sessionStorage.getItem('customer_chat_input') || '';
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('customer_chat_input', chatInput);
+  }, [chatInput]);
+
   const [isBotTyping, setIsBotTyping] = useState(false);
 
   // --- STATE FOR PROFILE / SECURITY ---
@@ -674,6 +681,7 @@ END:VCARD`;
     });
 
     setChatInput('');
+    sessionStorage.removeItem('customer_chat_input');
     setSelectedAttachment(null);
     setAttachmentError(null);
 
@@ -2966,6 +2974,7 @@ END:VCARD`;
                 {/* Filtering / Search */}
                 <div className="flex items-center gap-2">
                   <input
+                    id="customer-product-search-input"
                     type="text"
                     placeholder="Suchen nach Name/SKU..."
                     value={wwsSearchQuery}
