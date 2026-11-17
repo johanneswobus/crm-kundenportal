@@ -17,8 +17,11 @@ import {
   Video,
   Server,
   Globe,
-  Boxes
+  Boxes,
+  HardDrive,
+  Activity
 } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface SidebarProps {
   role: 'admin' | 'customer';
@@ -28,6 +31,8 @@ interface SidebarProps {
   onTabChange: (tab: string) => void;
   onLogout: () => void;
   unreadCount?: number;
+  syncStatus?: 'saved' | 'saving' | 'error';
+  lastSaved?: Date | null;
 }
 
 export default function Sidebar({
@@ -37,12 +42,15 @@ export default function Sidebar({
   currentTab,
   onTabChange,
   onLogout,
-  unreadCount = 0
+  unreadCount = 0,
+  syncStatus = 'saved',
+  lastSaved = null
 }: SidebarProps) {
   const isAdmin = role === 'admin';
 
   const adminNavItems = [
     { id: 'dashboard', label: 'Management Dashboard', icon: LayoutDashboard },
+    { id: 'auditlogs', label: 'Benutzer-Aktionen', icon: Activity },
     { id: 'customers', label: 'Kundenverwaltung', icon: Users },
     { id: 'projects', label: 'Kunden-Projekte', icon: Server },
     { id: 'inventory', label: 'Warenwirtschaft (WWS)', icon: Boxes },
@@ -122,38 +130,95 @@ export default function Sidebar({
           const isActive = currentTab === item.id;
           const Icon = item.icon;
           return (
-            <button
-              id={`nav-tab-${item.id}`}
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 transition-all duration-200 group text-sm font-medium ${
-                isActive ? roleStyles.activeItem : roleStyles.hoverItem
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon className={`h-4 w-4 ${isActive ? 'scale-105' : 'opacity-70 group-hover:opacity-100 transition-opacity'}`} />
-                <span>{item.label}</span>
-              </div>
-              {item.badge && item.badge > 0 ? (
-                <span className="bg-rose-500 text-white font-bold font-mono text-[10px] px-1.5 py-0.5 rounded-full leading-none">
-                  {item.badge}
-                </span>
-              ) : null}
-            </button>
+            <Tooltip key={item.id} content={`Wechseln zu ${item.label}`} className="w-full" position="right">
+              <button
+                id={`nav-tab-${item.id}`}
+                onClick={() => onTabChange(item.id)}
+                className={`w-full flex items-center justify-between px-3 py-2 transition-all duration-200 group text-sm font-medium ${
+                  isActive ? roleStyles.activeItem : roleStyles.hoverItem
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={`h-4 w-4 ${isActive ? 'scale-105' : 'opacity-70 group-hover:opacity-100 transition-opacity'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && item.badge > 0 ? (
+                  <span className="bg-rose-500 text-white font-bold font-mono text-[10px] px-1.5 py-0.5 rounded-full leading-none">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </button>
+            </Tooltip>
           );
         })}
       </nav>
 
+      {/* LOCAL TO SERVER PERSISTENCE STATUS BAR */}
+      <div className={`mx-3 mb-3 p-2.5 rounded-lg border bg-slate-950/40 text-[10px] ${roleStyles.border}`}>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-1.5 font-mono uppercase tracking-wider text-slate-400 font-bold">
+            <HardDrive className="h-3.5 w-3.5 text-indigo-400" />
+            <span>CRM-Sicherung</span>
+          </div>
+          {syncStatus === 'saved' && (
+            <span className="text-[8px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 px-1 py-0.5 rounded font-mono font-bold uppercase tracking-wide">
+              SQLite-Sync
+            </span>
+          )}
+          {syncStatus === 'saving' && (
+            <span className="text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/25 px-1 py-0.5 rounded font-mono font-bold uppercase tracking-wide animate-pulse">
+              Sichern...
+            </span>
+          )}
+          {syncStatus === 'error' && (
+            <span className="text-[8px] bg-rose-500/10 text-rose-400 border border-rose-500/25 px-1 py-0.5 rounded font-mono font-bold uppercase tracking-wide animate-bounce">
+              Sync-Fehler
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 mt-1.5">
+          <div className="relative flex h-2 w-2">
+            {syncStatus === 'saving' && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            )}
+            {syncStatus === 'error' && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${
+              syncStatus === 'saved' ? 'bg-emerald-500' :
+              syncStatus === 'saving' ? 'bg-amber-500' :
+              'bg-rose-500'
+            }`}></span>
+          </div>
+
+          <div className="flex-1 min-w-0 font-mono text-slate-350 select-text leading-tight">
+            <div className="flex justify-between text-[8px] text-slate-500">
+              <span>SQLite-DB:</span>
+              <span className="text-slate-300 font-semibold truncate hover:text-white" title="/data/crm.db">/data/crm.db</span>
+            </div>
+            <div className="flex justify-between text-[8px] text-slate-500 mt-0.5">
+              <span>Zeitstempel:</span>
+              <span className="text-indigo-300 font-bold">
+                {lastSaved ? lastSaved.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Nie'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Logout Footer Section */}
       <div className={`p-3 border-t ${roleStyles.border} bg-black/10`}>
-        <button
-          id="btn-logout"
-          onClick={onLogout}
-          className="w-full flex items-center gap-3 px-3 py-2 text-xs text-slate-400 hover:text-rose-200 hover:bg-rose-500/10 rounded-md transition-all duration-200 text-left font-medium"
-        >
-          <LogOut className="h-4 w-4 opacity-70 group-hover:opacity-100" />
-          <span>Abmelden</span>
-        </button>
+        <Tooltip content="Sitzung sicher beenden und abmelden" className="w-full" position="right">
+          <button
+            id="btn-logout"
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-3 py-2 text-xs text-slate-400 hover:text-rose-200 hover:bg-rose-500/10 rounded-md transition-all duration-200 text-left font-medium"
+          >
+            <LogOut className="h-4 w-4 opacity-70 group-hover:opacity-100" />
+            <span>Abmelden</span>
+          </button>
+        </Tooltip>
       </div>
     </aside>
   );

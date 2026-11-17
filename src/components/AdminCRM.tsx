@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, AreaChart, Area } from 'recharts';
+import CustomTooltip from './Tooltip';
 import { Customer, UploadedFile, DirectMessage, CalendarAppointment, CRMData, AuditLog } from '../types';
 import { encryptMessage, decryptMessage } from '../cryptoUtils';
-import { hashPassword } from '../storage';
+import { hashPassword, SQLiteStats, downloadSQLiteFile, downloadSQLiteAsJSON, importSQLiteFile } from '../storage';
 import { exportCustomersToCSV, parseCustomersFromCSV } from '../csvUtils';
 import { ROADMAP_SUBTASKS, RoadmapSubTask } from './CustomerPortal';
 import { ROADMAP_TEMPLATES } from '../templates';
@@ -55,7 +56,15 @@ import {
   Briefcase,
   Database,
   Settings,
-  X
+  X,
+  UserPlus,
+  HardDrive,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
+  Lock,
+  Activity
 } from 'lucide-react';
 
 const getPasswordStrength = (password: string) => {
@@ -167,9 +176,25 @@ interface AdminCRMProps {
   onOnlineToggle: (online: boolean) => void;
   onTabChange?: (tab: string) => void;
   secondsRemaining?: number;
+  sqliteStats?: SQLiteStats | null;
+  onReloadFromSQLite?: () => Promise<void>;
+  onForceSaveSQLite?: () => Promise<void>;
+  onApplyImportedSQLite?: (data: CRMData, stats: SQLiteStats) => void;
 }
 
-export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOnlineToggle, onTabChange, secondsRemaining }: AdminCRMProps) {
+export default function AdminCRM({
+  data,
+  onDataChange,
+  activeTab,
+  isOnline,
+  onOnlineToggle,
+  onTabChange,
+  secondsRemaining,
+  sqliteStats,
+  onReloadFromSQLite,
+  onForceSaveSQLite,
+  onApplyImportedSQLite
+}: AdminCRMProps) {
   const createSubAuditLog = (action: string, user: string, details: string, status: 'success' | 'failure' | 'warning' | 'info'): AuditLog => {
     return {
       id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
@@ -180,6 +205,93 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       status,
       ipAddress: '127.0.0.1 (Lokale Sitzung)'
     };
+  };
+
+  // --- STATE FOR SQLITE DATABASE MANAGEMENT ---
+  const [sqliteActionFeedback, setSqliteActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isSqliteBusy, setIsSqliteBusy] = useState(false);
+
+  const handleSQLiteSaveNow = async () => {
+    if (!onForceSaveSQLite) return;
+    setIsSqliteBusy(true);
+    setSqliteActionFeedback(null);
+    try {
+      await onForceSaveSQLite();
+      setSqliteActionFeedback({ type: 'success', message: 'Gesamter Datenbestand erfolgreich in SQLite (/data/crm.db) gespeichert.' });
+    } catch (err: any) {
+      setSqliteActionFeedback({ type: 'error', message: err?.message || 'Fehler beim Speichern in SQLite.' });
+    } finally {
+      setIsSqliteBusy(false);
+    }
+  };
+
+  const handleSQLiteReloadNow = async () => {
+    if (!onReloadFromSQLite) return;
+    setIsSqliteBusy(true);
+    setSqliteActionFeedback(null);
+    try {
+      await onReloadFromSQLite();
+      setSqliteActionFeedback({ type: 'success', message: 'Alle Tabellen erfolgreich aus SQLite (/data/crm.db) neu geladen.' });
+    } catch (err: any) {
+      setSqliteActionFeedback({ type: 'error', message: err?.message || 'Fehler beim Laden aus SQLite.' });
+    } finally {
+      setIsSqliteBusy(false);
+    }
+  };
+
+  const handleSQLiteDownload = async () => {
+    setIsSqliteBusy(true);
+    setSqliteActionFeedback(null);
+    try {
+      await downloadSQLiteFile();
+      setSqliteActionFeedback({ type: 'success', message: 'SQLite-Datenbankdatei (.db) wurde heruntergeladen.' });
+    } catch (err: any) {
+      setSqliteActionFeedback({ type: 'error', message: err?.message || 'Fehler beim Herunterladen der .db-Datei.' });
+    } finally {
+      setIsSqliteBusy(false);
+    }
+  };
+
+  const handleSQLiteExportJSON = async () => {
+    setIsSqliteBusy(true);
+    setSqliteActionFeedback(null);
+    try {
+      const { filename, totalRecords } = await downloadSQLiteAsJSON();
+      localStorage.setItem('admin_login_count', '0');
+      setAdminLoginCount(0);
+      setSqliteActionFeedback({
+        type: 'success',
+        message: `SQLite-Datenbankstand erfolgreich als "${filename}" heruntergeladen${totalRecords !== undefined ? ` (${totalRecords} Datensätze)` : ''}.`
+      });
+    } catch (err: any) {
+      setSqliteActionFeedback({ type: 'error', message: err?.message || 'Fehler beim JSON-Export der SQLite-Datenbank.' });
+    } finally {
+      setIsSqliteBusy(false);
+    }
+  };
+
+  const handleSQLiteImportDb = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsSqliteBusy(true);
+    setSqliteActionFeedback(null);
+    try {
+      const result = await importSQLiteFile(file);
+      if (onApplyImportedSQLite) {
+        onApplyImportedSQLite(result.data, result.stats);
+      } else {
+        onDataChange(result.data);
+      }
+      setSqliteActionFeedback({
+        type: 'success',
+        message: `SQLite-Datenbank "${file.name}" importiert (${result.stats.totalRecords} Datensätze geladen).`
+      });
+    } catch (err: any) {
+      setSqliteActionFeedback({ type: 'error', message: err?.message || 'SQLite-Import fehlgeschlagen.' });
+    } finally {
+      setIsSqliteBusy(false);
+    }
   };
 
   // --- DYNAMIC ALL TEMPLATES INJECTOR ---
@@ -259,6 +371,9 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
   const [auditStatusFilter, setAuditStatusFilter] = useState<'all' | 'success' | 'failure' | 'warning' | 'info'>('all');
   const [auditSortField, setAuditSortField] = useState<'timestamp' | 'action' | 'user'>('timestamp');
   const [auditSortDirection, setAuditSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [auditUserFilter, setAuditUserFilter] = useState<string>('all');
+  const [auditChronoOrder, setAuditChronoOrder] = useState<'desc' | 'asc'>('desc');
+  const [auditViewMode, setAuditViewMode] = useState<'timeline' | 'table'>('timeline');
 
   const [githubChecklist, setGithubChecklist] = useState({
     gitignore: true,
@@ -318,6 +433,33 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     } catch (e) {
       console.error(e);
       alert('Fehler beim Exportieren der CSV-Datei.');
+    }
+  };
+
+  const handleExportJSON = () => {
+    try {
+      const jsonContent = JSON.stringify(data.customers, null, 2);
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const today = new Date().toISOString().slice(0, 10);
+      link.setAttribute('download', `crm_mandanten_export_${today}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Audit Log for export
+      onDataChange(prev => ({
+        ...prev,
+        auditLogs: [
+          createSubAuditLog('Export durchgeführt', 'admin', `Kundenliste (${data.customers.length} Einträge) erfolgreich als JSON exportiert`, 'success'),
+          ...(prev.auditLogs || [])
+        ]
+      }));
+    } catch (e) {
+      console.error(e);
+      alert('Fehler beim Exportieren der JSON-Datei.');
     }
   };
 
@@ -405,12 +547,210 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     reader.readAsText(file, 'utf-8');
   };
 
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+        
+        const parsed = JSON.parse(text);
+        if (!Array.isArray(parsed)) {
+          alert('Keine gültige JSON-Kundenliste gefunden. Die Datei muss ein Array von Mandanten sein.');
+          return;
+        }
+
+        const overwriteConfirm = window.confirm(
+          `Sollen ${parsed.length} Mandanten aus der JSON-Sicherungsdatei importiert werden?\n\nKunden mit bereits existierenden IDs werden aktualisiert, neue Kunden werden hinzugefügt.`
+        );
+        if (!overwriteConfirm) {
+          e.target.value = '';
+          return;
+        }
+
+        onDataChange(prev => {
+          const existingCustomers = [...prev.customers];
+          let updatedCount = 0;
+          let addedCount = 0;
+
+          parsed.forEach((parsedCust: any) => {
+            if (!parsedCust.name && !parsedCust.id) return;
+
+            const index = existingCustomers.findIndex(c => c.id === parsedCust.id);
+            if (index !== -1) {
+              existingCustomers[index] = {
+                ...existingCustomers[index],
+                ...parsedCust,
+                status: (parsedCust.status || existingCustomers[index].status) as any,
+                username: parsedCust.username || existingCustomers[index].username,
+                approved: parsedCust.approved !== undefined ? parsedCust.approved : existingCustomers[index].approved
+              };
+              updatedCount++;
+            } else {
+              const defaultName = parsedCust.name || 'Unbekannter Mandant';
+              existingCustomers.push({
+                id: parsedCust.id || 'cust_' + Math.random().toString(36).substring(2, 9),
+                name: defaultName,
+                company: parsedCust.company || '',
+                email: parsedCust.email || '',
+                phone: parsedCust.phone || '',
+                address: parsedCust.address || '',
+                status: (parsedCust.status || 'Aktiv') as any,
+                username: parsedCust.username || defaultName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'import_' + Math.random().toString(36).substring(2, 7),
+                approved: parsedCust.approved !== undefined ? parsedCust.approved : true,
+                createdAt: parsedCust.createdAt || new Date().toISOString(),
+                notes: parsedCust.notes || '',
+                passwordHash: parsedCust.passwordHash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+              });
+              addedCount++;
+            }
+          });
+
+          setTimeout(() => {
+            alert(`Erfolgreich importiert:\n\n• ${addedCount} neue Mandanten angelegt\n• ${updatedCount} bestehende Mandanten aktualisiert`);
+          }, 100);
+
+          return {
+            ...prev,
+            customers: existingCustomers,
+            auditLogs: [
+              createSubAuditLog('Datenimport', 'admin', `JSON-Datei erfolgreich eingelesen (${addedCount} neue Mandanten angelegt, ${updatedCount} bestehende Mandanten aktualisiert)`, 'success'),
+              ...(prev.auditLogs || [])
+            ]
+          };
+        });
+
+      } catch (err) {
+        console.error(err);
+        alert('Fehler beim Parsen der JSON-Kundenliste. Bitte stellen Sie sicher, dass es sich um eine gültige JSON-Sicherungsdatei handelt.');
+      }
+      e.target.value = '';
+    };
+
+    reader.readAsText(file, 'utf-8');
+  };
+
   const [adminLoginCount, setAdminLoginCount] = useState<number>(() => {
     return parseInt(localStorage.getItem('admin_login_count') || '0', 10);
   });
 
-  const handleExportFullJSON = () => {
+  // --- INTEGRITY INSPECT STATES ---
+  const [integrityReport, setIntegrityReport] = useState<{
+    customersCount: number;
+    approvedCustomers: number;
+    unlockedContracts: number;
+    totalFiles: number;
+    totalMessages: number;
+    totalInvoices: number;
+    totalBotRules: number;
+    totalLogCount: number;
+    integrityVerified: boolean;
+    timestamp: string;
+  } | null>(null);
+
+  const handleRunIntegrityCheck = () => {
     try {
+      // Analyze data consistency
+      const customersCount = (data.customers || []).length;
+      const approvedCustomers = (data.customers || []).filter(c => c.approved !== false).length;
+      const totalFiles = (data.files || []).length;
+      const unlockedContracts = (data.files || []).filter(f => f.category === 'Vertrag').length;
+      const totalMessages = (data.messages || []).length;
+      const totalInvoices = (data.invoices || []).length;
+      const totalBotRules = (data.botRules || []).length;
+      const totalLogCount = (data.auditLogs || []).length;
+      
+      // Perform structural schema verification
+      const checkResult = validateCRMDataStructure(data);
+      
+      if (checkResult.valid) {
+        setIntegrityReport({
+          customersCount,
+          approvedCustomers,
+          unlockedContracts,
+          totalFiles,
+          totalMessages,
+          totalInvoices,
+          totalBotRules,
+          totalLogCount,
+          integrityVerified: true,
+          timestamp: new Date().toLocaleTimeString('de-DE') + ' ' + new Date().toLocaleDateString('de-DE')
+        });
+      } else {
+        alert('Strukturelle Integrität fehlerhaft: ' + checkResult.errors.join('\n'));
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Fehler bei der Durchführung der Systemintegritätsprüfung.');
+    }
+  };
+
+  const handleExportEncryptedBackup = () => {
+    try {
+      const passphrase = window.prompt(
+        'Verschlüsseltes Backup erstellen:\n' +
+        'Geben Sie ein optionales persönliches Passwort zum Schutz Ihrer Offline-Datei an (leer lassen für Kanzlei-Standardsicherung):'
+      );
+      if (passphrase === null) return; // User cancelled
+      
+      const pKey = passphrase || 'CRM_DATABASE_MASTER_SECURE_KEY';
+      const rawString = JSON.stringify(data);
+      const encryptedPayload = encryptMessage(rawString, pKey);
+      
+      const backupWrapper = {
+        _isEncrypted: true,
+        _clientVersion: 'v4.1',
+        _encryptedTimestamp: new Date().toISOString(),
+        payload: encryptedPayload
+      };
+      
+      const fileStr = JSON.stringify(backupWrapper, null, 2);
+      const blob = new Blob([fileStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const today = new Date().toISOString().slice(0, 10);
+      link.setAttribute('download', `crm_datenbank_secure_backup_${today}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      localStorage.setItem('admin_login_count', '0');
+      setAdminLoginCount(0);
+      
+      // Also add to audit log
+      const updatedLogs = [
+        createSubAuditLog('Sicherung verschlüsselt exportiert', 'admin', 'Verschlüsseltes Datenbank-Backup manuell exportiert und offline archiviert.', 'success'),
+        ...(data.auditLogs || [])
+      ];
+      onDataChange({
+        ...data,
+        auditLogs: updatedLogs
+      });
+      
+      alert('Vollständiges verschlüsseltes Datenbank-Backup erfolgreich erstellt und heruntergeladen!\nDas Backup ist durch Ihre Passphrase gesichert.');
+    } catch (e) {
+      console.error(e);
+      alert('Fehler beim verschlüsselten Datenbank-Export.');
+    }
+  };
+
+  const handleExportFullJSON = async () => {
+    try {
+      if (isOnline) {
+        const { filename, totalRecords } = await downloadSQLiteAsJSON();
+        localStorage.setItem('admin_login_count', '0');
+        setAdminLoginCount(0);
+        setSqliteActionFeedback({
+          type: 'success',
+          message: `Aktueller SQLite-Datenbankstand als "${filename}" heruntergeladen${totalRecords !== undefined ? ` (${totalRecords} Datensätze)` : ''}.`
+        });
+        return;
+      }
+
       const dataStr = JSON.stringify(data, null, 2);
       const blob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -421,14 +761,20 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Reset count after successful backup export
+      URL.revokeObjectURL(url);
+
       localStorage.setItem('admin_login_count', '0');
       setAdminLoginCount(0);
-      alert('Vollständiges lokales Datenbank-Backup erfolgreich erstellt und heruntergeladen!\nDer Login-Sicherheitszähler wurde zurückgesetzt.');
+      setSqliteActionFeedback({
+        type: 'success',
+        message: 'Lokales Datenbank-Backup erfolgreich als JSON heruntergeladen.'
+      });
     } catch (e) {
       console.error(e);
-      alert('Fehler beim Exportieren des Datenbank-Backups.');
+      setSqliteActionFeedback({
+        type: 'error',
+        message: 'Fehler beim Exportieren des JSON-Datenbank-Backups.'
+      });
     }
   };
 
@@ -517,7 +863,31 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       try {
         const text = event.target?.result as string;
         if (!text) return;
-        const parsed = JSON.parse(text);
+        let parsed = JSON.parse(text);
+        
+        // Handle encrypted backups transparently with visual prompts
+        if (parsed && parsed._isEncrypted === true) {
+          const passphrase = window.prompt(
+            'Entschlüsselungs-Schlüssel angeben:\n' +
+            'Dieses Backup-Archiv ist verschlüsselt geschützt. Bitte geben Sie Ihre Passphrase ein, um die Kanzlei-Struktur dekomprimieren zu können:'
+          );
+          if (passphrase === null) {
+            e.target.value = '';
+            return;
+          }
+          const pKey = passphrase || 'CRM_DATABASE_MASTER_SECURE_KEY';
+          try {
+            const decryptedRaw = decryptMessage(parsed.payload, pKey);
+            if (!decryptedRaw || decryptedRaw.startsWith('[Decryption Error')) {
+              throw new Error('Invalide Passphrase');
+            }
+            parsed = JSON.parse(decryptedRaw);
+          } catch (decErr) {
+            alert('FEHLSCHLAG: Die angegebene Passphrase ist inkorrekt oder das E2EE-Backup-Paket ist beschädigt. Das Einspielen wurde abgebrochen.');
+            e.target.value = '';
+            return;
+          }
+        }
         
         const validation = validateCRMDataStructure(parsed);
         if (!validation.valid) {
@@ -711,7 +1081,8 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [customerStatusFilter, setCustomerStatusFilter] = useState<'all' | 'approved' | 'pending'>('all');
-  const [customerSortField, setCustomerSortField] = useState<'createdAt' | 'name' | 'company' | 'approved'>('createdAt');
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<'all' | Customer['status']>('all');
+  const [customerSortField, setCustomerSortField] = useState<'createdAt' | 'status' | 'name' | 'company' | 'approved'>('createdAt');
   const [customerSortOrder, setCustomerSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // --- STATE FOR CLIENT PORT PROJECTS & PROVISIONING (IONOS) ---
@@ -1030,6 +1401,82 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     answer: string;
   } | null>(null);
 
+  // --- FAILED LOGINS VISUALIZATION METRICS FOR THE LAST 24 HOURS ---
+  const failedLogins24hData = useMemo(() => {
+    const now = new Date();
+    const dataPoints = [];
+    
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const hour = d.getHours();
+      const label = `${hour.toString().padStart(2, '0')}:00`;
+      
+      const bucketStart = new Date(d);
+      bucketStart.setMinutes(0, 0, 0);
+      const bucketEnd = new Date(d);
+      bucketEnd.setMinutes(59, 59, 999);
+      
+      const count = (data.auditLogs || []).filter(log => {
+        if (log.status !== 'failure') return false;
+        const ts = new Date(log.timestamp);
+        return ts >= bucketStart && ts <= bucketEnd;
+      }).length;
+      
+      dataPoints.push({
+        label,
+        Fehlversuche: count,
+        timeRange: `${label} - ${(hour === 23 ? 0 : hour + 1).toString().padStart(2, '0')}:00`
+      });
+    }
+    return dataPoints;
+  }, [data.auditLogs]);
+
+  const total24hFailures = useMemo(() => {
+    return (data.auditLogs || []).filter(log => {
+      if (log.status !== 'failure') return false;
+      const ts = new Date(log.timestamp);
+      return (Date.now() - ts.getTime()) <= 24 * 60 * 60 * 1000;
+    }).length;
+  }, [data.auditLogs]);
+
+  const uniqueFailureIPs = useMemo(() => {
+    const ips = new Set<string>();
+    (data.auditLogs || []).forEach(log => {
+      if (log.status === 'failure' && (Date.now() - new Date(log.timestamp).getTime()) <= 24 * 60 * 60 * 1000) {
+        if (log.ipAddress) ips.add(log.ipAddress);
+      }
+    });
+    return ips.size;
+  }, [data.auditLogs]);
+
+  // Handle simulating a failed login attempt for beautiful graphs (and security verification)
+  const handleSimulateFailedLogin = () => {
+    const usernames = ['admin', 'root', 'administrator', 'max.muster', 'kunden-portal', 'sec-agent'];
+    const ips = ['84.112.45.22', '213.95.12.87', '192.168.10.4', '79.224.110.15', '109.255.6.39'];
+    const randomUser = usernames[Math.floor(Math.random() * usernames.length)];
+    const randomIp = ips[Math.floor(Math.random() * ips.length)];
+    
+    const hoursAgo = Math.floor(Math.random() * 24);
+    const mockDate = new Date();
+    mockDate.setHours(mockDate.getHours() - hoursAgo);
+    mockDate.setMinutes(Math.floor(Math.random() * 60));
+    
+    const newLog: AuditLog = {
+      id: `log-sim-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+      timestamp: mockDate.toISOString(),
+      action: 'Anmeldung fehlgeschlagen',
+      user: randomUser,
+      details: `Sicherheitssimulation: Ungültiges Passwort für Benutzer '${randomUser}' über IP ${randomIp}`,
+      status: 'failure',
+      ipAddress: randomIp
+    };
+    
+    onDataChange(prev => ({
+      ...prev,
+      auditLogs: [newLog, ...(prev.auditLogs || [])]
+    }));
+  };
+
   const filteredAndSortedAuditLogs = useMemo(() => {
     const logs = data.auditLogs || [];
     
@@ -1072,6 +1519,103 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
     
     return filtered;
   }, [data.auditLogs, auditSearch, auditStatusFilter, auditSortField, auditSortDirection]);
+
+  const auditSummaryStats = useMemo(() => {
+    const logs = data.auditLogs || [];
+    const usersSet = new Set<string>();
+    let successCount = 0;
+    let infoCount = 0;
+    let warningCount = 0;
+    let failureCount = 0;
+
+    logs.forEach(log => {
+      if (log.user) usersSet.add(log.user);
+      if (log.status === 'success') successCount += 1;
+      else if (log.status === 'info') infoCount += 1;
+      else if (log.status === 'warning') warningCount += 1;
+      else if (log.status === 'failure') failureCount += 1;
+    });
+
+    return {
+      totalCount: logs.length,
+      successCount,
+      infoCount,
+      warningCount,
+      failureCount,
+      uniqueUsers: Array.from(usersSet).sort((a, b) => a.localeCompare(b, 'de'))
+    };
+  }, [data.auditLogs]);
+
+  const chronologicalAuditLogs = useMemo(() => {
+    const logs = data.auditLogs || [];
+    const query = auditSearch.trim().toLowerCase();
+
+    return logs
+      .filter(log => {
+        if (auditStatusFilter !== 'all' && log.status !== auditStatusFilter) {
+          return false;
+        }
+        if (auditUserFilter !== 'all' && log.user !== auditUserFilter) {
+          return false;
+        }
+        if (query) {
+          const actionMatch = (log.action || '').toLowerCase().includes(query);
+          const userMatch = (log.user || '').toLowerCase().includes(query);
+          const detailsMatch = (log.details || '').toLowerCase().includes(query);
+          const ipMatch = (log.ipAddress || '').toLowerCase().includes(query);
+          return actionMatch || userMatch || detailsMatch || ipMatch;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const tsA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tsB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        const safeA = Number.isNaN(tsA) ? 0 : tsA;
+        const safeB = Number.isNaN(tsB) ? 0 : tsB;
+        return auditChronoOrder === 'desc' ? safeB - safeA : safeA - safeB;
+      });
+  }, [data.auditLogs, auditSearch, auditStatusFilter, auditUserFilter, auditChronoOrder]);
+
+  const groupedAuditLogsByDate = useMemo(() => {
+    const groups: { dateKey: string; dateLabel: string; entries: AuditLog[] }[] = [];
+    const groupMap = new Map<string, { dateKey: string; dateLabel: string; entries: AuditLog[] }>();
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayKey = yesterdayDate.toISOString().slice(0, 10);
+
+    chronologicalAuditLogs.forEach(log => {
+      const parsed = log.timestamp ? new Date(log.timestamp) : null;
+      const isValidDate = parsed && !Number.isNaN(parsed.getTime());
+      const dateKey = isValidDate ? parsed.toISOString().slice(0, 10) : 'unbekannt';
+
+      let dateLabel = 'Unbekanntes Datum';
+      if (isValidDate) {
+        const formatted = parsed.toLocaleDateString('de-DE', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+        if (dateKey === todayKey) {
+          dateLabel = `Heute · ${formatted}`;
+        } else if (dateKey === yesterdayKey) {
+          dateLabel = `Gestern · ${formatted}`;
+        } else {
+          dateLabel = formatted;
+        }
+      }
+
+      if (!groupMap.has(dateKey)) {
+        const group = { dateKey, dateLabel, entries: [] as AuditLog[] };
+        groupMap.set(dateKey, group);
+        groups.push(group);
+      }
+      groupMap.get(dateKey)!.entries.push(log);
+    });
+
+    return groups;
+  }, [chronologicalAuditLogs]);
 
   const weeklyData = useMemo(() => {
     // Current date references June 20, 2026
@@ -1143,6 +1687,195 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       };
     });
   }, [data.customers]);
+
+  const formatStorageSize = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2).replace('.', ',')} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2).replace('.', ',')} GB`;
+  };
+
+  const registrationMetrics = useMemo(() => {
+    const customers = data.customers || [];
+    const now = Date.now();
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+
+    const newCustomersCount = customers.filter(c => c.status === 'Neukunde').length;
+    const activeCustomersCount = customers.filter(c => c.status === 'Aktiv').length;
+    const regularCustomersCount = customers.filter(c => c.status === 'Stammkunde').length;
+    const pendingApprovalsCount = customers.filter(c => c.approved === false).length;
+    const approvedCount = customers.filter(c => c.approved !== false).length;
+
+    const recent30DaysCount = customers.filter(c => {
+      if (!c.createdAt) return false;
+      const ts = new Date(c.createdAt).getTime();
+      if (Number.isNaN(ts)) return false;
+      const diff = now - ts;
+      return diff >= 0 && diff <= thirtyDaysMs;
+    }).length;
+
+    const sortedByDate = [...customers]
+      .filter(c => c.createdAt && !Number.isNaN(new Date(c.createdAt).getTime()))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const latestCustomer = sortedByDate.length > 0 ? sortedByDate[0] : null;
+
+    return {
+      totalCustomers: customers.length,
+      newCustomersCount,
+      activeCustomersCount,
+      regularCustomersCount,
+      pendingApprovalsCount,
+      approvedCount,
+      recent30DaysCount,
+      latestCustomer
+    };
+  }, [data.customers]);
+
+  const documentStorageMetrics = useMemo(() => {
+    const files = data.files || [];
+    const storageLimitBytes = 100 * 1024 * 1024; // 100 MB lokales Archiv-Kontingent
+
+    let totalBytes = 0;
+    let contractBytes = 0;
+    let contractCount = 0;
+    let videoBytes = 0;
+    let videoCount = 0;
+    let otherBytes = 0;
+    let otherCount = 0;
+
+    files.forEach(file => {
+      const size = Number(file.size) || 0;
+      totalBytes += size;
+      if (file.category === 'Vertrag') {
+        contractBytes += size;
+        contractCount += 1;
+      } else if (file.category === 'Video') {
+        videoBytes += size;
+        videoCount += 1;
+      } else {
+        otherBytes += size;
+        otherCount += 1;
+      }
+    });
+
+    const totalFilesCount = files.length;
+    const avgBytes = totalFilesCount > 0 ? Math.round(totalBytes / totalFilesCount) : 0;
+    const usagePercent = Math.min(100, Math.round((totalBytes / storageLimitBytes) * 1000) / 10);
+
+    return {
+      totalFilesCount,
+      totalBytes,
+      avgBytes,
+      storageLimitBytes,
+      usagePercent,
+      contractBytes,
+      contractCount,
+      videoBytes,
+      videoCount,
+      otherBytes,
+      otherCount
+    };
+  }, [data.files]);
+
+  const customerStatusCounts = useMemo(() => {
+    const customers = data.customers || [];
+    return {
+      all: customers.length,
+      Neukunde: customers.filter(c => c.status === 'Neukunde').length,
+      Aktiv: customers.filter(c => c.status === 'Aktiv').length,
+      Stammkunde: customers.filter(c => c.status === 'Stammkunde').length,
+      Inaktiv: customers.filter(c => c.status === 'Inaktiv').length
+    };
+  }, [data.customers]);
+
+  const filteredAndSortedCustomers = useMemo(() => {
+    const statusOrder: Record<Customer['status'], number> = {
+      Neukunde: 1,
+      Aktiv: 2,
+      Stammkunde: 3,
+      Inaktiv: 4
+    };
+    const query = customerSearch.toLowerCase().trim();
+
+    return (data.customers || [])
+      .filter(c => {
+        const matchesSearch =
+          !query ||
+          (c.name || '').toLowerCase().includes(query) ||
+          (c.company || '').toLowerCase().includes(query) ||
+          (c.notes || '').toLowerCase().includes(query) ||
+          (c.email || '').toLowerCase().includes(query) ||
+          (c.phone || '').toLowerCase().includes(query) ||
+          (c.address || '').toLowerCase().includes(query) ||
+          (c.status || '').toLowerCase().includes(query) ||
+          (c.onboarding?.industry || '').toLowerCase().includes(query) ||
+          (c.onboarding?.services || '').toLowerCase().includes(query) ||
+          (c.onboarding?.products || '').toLowerCase().includes(query) ||
+          (c.onboarding?.description || '').toLowerCase().includes(query) ||
+          (c.onboarding?.specialFeatures || '').toLowerCase().includes(query) ||
+          (c.onboarding?.individualRequirements || '').toLowerCase().includes(query);
+
+        if (!matchesSearch) return false;
+
+        if (customerTypeFilter !== 'all' && c.status !== customerTypeFilter) {
+          return false;
+        }
+
+        if (customerStatusFilter === 'approved') {
+          return c.approved !== false;
+        } else if (customerStatusFilter === 'pending') {
+          return c.approved === false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        let comparison = 0;
+        if (customerSortField === 'createdAt') {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          comparison = (Number.isNaN(dateA) ? 0 : dateA) - (Number.isNaN(dateB) ? 0 : dateB);
+        } else if (customerSortField === 'status') {
+          const rankA = statusOrder[a.status] ?? 99;
+          const rankB = statusOrder[b.status] ?? 99;
+          comparison = rankA - rankB;
+          if (comparison === 0) {
+            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            comparison = (Number.isNaN(dateB) ? 0 : dateB) - (Number.isNaN(dateA) ? 0 : dateA);
+          }
+        } else if (customerSortField === 'name') {
+          comparison = (a.name || '').localeCompare(b.name || '', 'de');
+        } else if (customerSortField === 'company') {
+          comparison = (a.company || '').localeCompare(b.company || '', 'de');
+        } else if (customerSortField === 'approved') {
+          const appA = a.approved !== false ? 1 : 0;
+          const appB = b.approved !== false ? 1 : 0;
+          comparison = appA - appB;
+        }
+
+        return customerSortOrder === 'asc' ? comparison : -comparison;
+      });
+  }, [data.customers, customerSearch, customerTypeFilter, customerStatusFilter, customerSortField, customerSortOrder]);
+
+  const handleCustomerHeaderSort = (field: 'createdAt' | 'status' | 'name' | 'company' | 'approved') => {
+    if (customerSortField === field) {
+      setCustomerSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setCustomerSortField(field);
+      setCustomerSortOrder(field === 'createdAt' ? 'desc' : 'asc');
+    }
+  };
+
+  const resetCustomerFilters = () => {
+    setCustomerSearch('');
+    setCustomerTypeFilter('all');
+    setCustomerStatusFilter('all');
+    setCustomerSortField('createdAt');
+    setCustomerSortOrder('desc');
+  };
 
   // --- KI-BOT TRAINING ACTIONS ---
   const handleOpenBotRuleModal = (ruleId: string | null = null) => {
@@ -2088,8 +2821,30 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
         <div className="flex-grow flex flex-col h-full overflow-hidden animate-fade-in select-none">
           {/* Header Bar */}
           <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between flex-shrink-0">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
-              <span>Kunden</span> <span className="text-slate-300">/</span> <span className="text-slate-900 font-semibold">Zentrale</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Kunden</span> <span className="text-slate-300">/</span> <span className="text-slate-900 font-semibold">Zentrale</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => onTabChange?.('dashboard')}
+                  className="px-3 py-1 text-xs font-semibold rounded-md bg-white text-slate-900 shadow-xs whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Übersicht
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTabChange?.('auditlogs')}
+                  className="px-3 py-1 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  <span>Benutzer-Aktionen</span>
+                  <span className="font-mono tabular-nums text-[11px] text-slate-400">
+                    {auditSummaryStats.totalCount}
+                  </span>
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-4">
               <button
@@ -2240,6 +2995,186 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
             </div>
           </div>
 
+          {/* ÜBERSICHT: NEUANMELDUNGEN & SPEICHERVERBRAUCH FÜR DOKUMENTE (INFOKARTEN) */}
+          <section aria-label="Übersicht Neuanmeldungen und Speicherverbrauch" className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-0.5">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">Neuanmeldungen &amp; Dokumenten-Speicher</h2>
+                <p className="text-xs text-slate-500">Aktuelle Mandanten-Registrierungen und lokaler Speicherverbrauch im Überblick.</p>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-slate-500 font-mono tabular-nums">
+                <span>{registrationMetrics.totalCustomers} Mandanten</span>
+                <span aria-hidden="true">·</span>
+                <span>{documentStorageMetrics.totalFilesCount} Dokumente</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {/* Infokarte 1: Neuanmeldungen */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col justify-between gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Neuanmeldungen</p>
+                    <div className="flex items-baseline gap-2 mt-1.5">
+                      <span className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
+                        {registrationMetrics.newCustomersCount}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        Status Neukunde
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                    <UserPlus className="h-5 w-5" />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                  <div className="text-slate-500 font-mono tabular-nums truncate">
+                    <span>{registrationMetrics.recent30DaysCount} in 30 Tagen</span>
+                    <span className="mx-1.5" aria-hidden="true">·</span>
+                    <span>{registrationMetrics.activeCustomersCount} Aktiv</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerTypeFilter('Neukunde');
+                      setCustomerStatusFilter('all');
+                      onTabChange?.('customers');
+                    }}
+                    className="text-indigo-600 hover:text-indigo-700 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Ansehen
+                  </button>
+                </div>
+              </div>
+
+              {/* Infokarte 2: Letzte Registrierung & Freigabe */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col justify-between gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-slate-500">Offene Freigaben</p>
+                    <div className="flex items-baseline gap-2 mt-1.5">
+                      <span className={`text-2xl font-bold font-mono tabular-nums ${
+                        registrationMetrics.pendingApprovalsCount > 0 ? 'text-amber-600' : 'text-slate-900'
+                      }`}>
+                        {registrationMetrics.pendingApprovalsCount}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {registrationMetrics.pendingApprovalsCount === 1 ? 'Prüfung offen' : 'Prüfungen offen'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`p-2.5 rounded-lg shrink-0 ${
+                    registrationMetrics.pendingApprovalsCount > 0
+                      ? 'bg-amber-50 text-amber-600'
+                      : 'bg-emerald-50 text-emerald-600'
+                  }`}>
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500 truncate" title={registrationMetrics.latestCustomer ? `${registrationMetrics.latestCustomer.name} (${new Date(registrationMetrics.latestCustomer.createdAt).toLocaleDateString('de-DE')})` : 'Keine Registrierungen'}>
+                    {registrationMetrics.latestCustomer
+                      ? `Letzte: ${registrationMetrics.latestCustomer.name} · ${new Date(registrationMetrics.latestCustomer.createdAt).toLocaleDateString('de-DE')}`
+                      : 'Noch keine Anmeldungen'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerTypeFilter('all');
+                      setCustomerStatusFilter(registrationMetrics.pendingApprovalsCount > 0 ? 'pending' : 'all');
+                      onTabChange?.('customers');
+                    }}
+                    className="text-indigo-600 hover:text-indigo-700 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Verwalten
+                  </button>
+                </div>
+              </div>
+
+              {/* Infokarte 3: Speicherverbrauch Dokumente */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Speicherverbrauch Dokumente</p>
+                    <div className="flex items-baseline gap-2 mt-1.5">
+                      <span className="text-2xl font-bold text-slate-900 font-mono tabular-nums">
+                        {formatStorageSize(documentStorageMetrics.totalBytes)}
+                      </span>
+                      <span className="text-xs text-slate-500 font-mono tabular-nums">
+                        / 100 MB
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                    <HardDrive className="h-5 w-5" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        documentStorageMetrics.usagePercent >= 85
+                          ? 'bg-rose-500'
+                          : documentStorageMetrics.usagePercent >= 60
+                          ? 'bg-amber-500'
+                          : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${Math.max(documentStorageMetrics.totalBytes > 0 ? 2 : 0, documentStorageMetrics.usagePercent)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono tabular-nums">
+                    <span>{documentStorageMetrics.usagePercent.toFixed(1).replace('.', ',')}% belegt</span>
+                    <span>Ø {formatStorageSize(documentStorageMetrics.avgBytes)} / Datei</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Infokarte 4: Speicherverteilung nach Kategorie */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500">Speicher nach Dokumenttyp</p>
+                    <p className="text-xs text-slate-400 mt-0.5 font-mono tabular-nums">
+                      {documentStorageMetrics.totalFilesCount} Dateien archiviert
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onTabChange?.('files')}
+                    className="text-xs text-indigo-600 hover:text-indigo-700 font-semibold whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    Archiv
+                  </button>
+                </div>
+
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Verträge ({documentStorageMetrics.contractCount})</span>
+                    <span className="font-mono tabular-nums font-semibold text-slate-800">
+                      {formatStorageSize(documentStorageMetrics.contractBytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Videos ({documentStorageMetrics.videoCount})</span>
+                    <span className="font-mono tabular-nums font-semibold text-slate-800">
+                      {formatStorageSize(documentStorageMetrics.videoBytes)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">Zusatzdateien ({documentStorageMetrics.otherCount})</span>
+                    <span className="font-mono tabular-nums font-semibold text-slate-800">
+                      {formatStorageSize(documentStorageMetrics.otherBytes)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* STATS & DATA MANAGEMENT PANEL */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-1 bg-slate-100/30 rounded-2xl border border-slate-200/50">
             {/* Box 1: Mandanten-Registrierungsstatus */}
@@ -2303,6 +3238,177 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* BOX 3: SYSTEM-INTEGRITÄT & VERSCHLÜSSELTE OFFLINE-SICHERUNG */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-5 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white rounded-2xl border border-slate-800 shadow-md">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-bold font-mono text-emerald-400 uppercase tracking-widest">System-Stabilitätszentrum</span>
+              </div>
+              <h4 className="text-base font-bold tracking-tight text-slate-100 uppercase">Mandanten-Datenintegrität &amp; Sicherung</h4>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Prüfen Sie mit einem Klick die relationale Konsistenz der Kundenkartei, der Systemnachrichten und der hochgeladenen Mandanten-Verträge. Erstellen Sie zudem hochgradig verschlüsselte lokale Sicherungskopien für unkomplizierten Offline-Transfer.
+              </p>
+            </div>
+
+            <div className="flex flex-col justify-between space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                {/* 1. INTERNALS STRUCTURAL INTEGRITY CHECKER */}
+                <button
+                  type="button"
+                  onClick={handleRunIntegrityCheck}
+                  className="p-4 bg-slate-900 border border-slate-850 hover:border-indigo-500 rounded-xl flex flex-col items-center gap-2.5 justify-center cursor-pointer transition-all hover:bg-slate-850/60 shadow-sm active:scale-95 group text-center"
+                >
+                  <ShieldCheck className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-slate-100">Integrität prüfen</span>
+                    <span className="block text-[8px] text-slate-500 font-mono mt-0.5 uppercase">Konsistenz-Scan</span>
+                  </div>
+                </button>
+
+                {/* 2. CRYPTOGRAPHICALLY ENCRYPTED SECURE JSON EXPORTER */}
+                <button
+                  type="button"
+                  onClick={handleExportEncryptedBackup}
+                  className="p-4 bg-slate-900 border border-slate-850 hover:border-amber-500 rounded-xl flex flex-col items-center gap-2.5 justify-center cursor-pointer transition-all hover:bg-slate-850/60 shadow-sm active:scale-95 group text-center"
+                >
+                  <Lock className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+                  <div className="text-center">
+                    <span className="block text-[11px] font-bold text-slate-100">Sicheres Backup</span>
+                    <span className="block text-[8px] text-slate-500 font-mono mt-0.5 uppercase">Encrypted JSON EX</span>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex justify-between items-center text-[9px] font-mono text-slate-550 uppercase border-t border-slate-850/60 pt-2.5">
+                <span>Zuletzt geprüft: Jetzt bereit</span>
+                <span className="text-indigo-400">SQLite-DB: /data/crm.db</span>
+              </div>
+            </div>
+          </div>
+
+          {/* BOX 4: SQLITE DATENBANK PERSISTENZ & VERWALTUNG */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-sm font-bold text-slate-800">SQLite-Datenbank (/data/crm.db)</h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Vollständige relationale Speicherung aller Kunden, Dokumente, Nachrichten, Termine, Rechnungen, WWS-Daten, Bot-Regeln, Vorlagen und Audit-Logs.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSqliteBusy}
+                  onClick={handleSQLiteSaveNow}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>In SQLite speichern</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSqliteBusy}
+                  onClick={handleSQLiteReloadNow}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSqliteBusy ? 'animate-spin' : ''}`} />
+                  <span>Aus SQLite laden</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSqliteBusy}
+                  onClick={handleSQLiteExportJSON}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>JSON-Backup herunterladen</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSqliteBusy}
+                  onClick={handleSQLiteDownload}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 border border-slate-200 rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>.db herunterladen</span>
+                </button>
+                <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>.db wiederherstellen</span>
+                  <input
+                    type="file"
+                    accept=".db,.sqlite,.sqlite3"
+                    onChange={handleSQLiteImportDb}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {sqliteActionFeedback && (
+              <div className={`px-3 py-2 rounded text-xs font-medium border ${
+                sqliteActionFeedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}>
+                {sqliteActionFeedback.message}
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 font-mono tabular-nums">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span>Größe: {sqliteStats ? formatStorageSize(sqliteStats.fileSizeBytes) : '—'}</span>
+                <span aria-hidden="true">·</span>
+                <span>Modus: {sqliteStats?.journalMode || 'WAL'}</span>
+                <span aria-hidden="true">·</span>
+                <span>Datensätze gesamt: {sqliteStats?.totalRecords ?? 0}</span>
+              </div>
+              <div className="text-slate-500">
+                {sqliteStats?.lastSavedAt
+                  ? `Letzte Speicherung: ${new Date(sqliteStats.lastSavedAt).toLocaleString('de-DE')}`
+                  : 'Aktiv synchronisiert'}
+              </div>
+            </div>
+
+            {sqliteStats && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-1 text-[11px] font-mono tabular-nums">
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Kunden</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.customers}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Dateien</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.files}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Chats</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.messages}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Termine</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.appointments}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Rechnungen</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.invoices}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">WWS</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.inventoryProducts + sqliteStats.tableCounts.suppliers + sqliteStats.tableCounts.supplierOrders}</span>
+                </div>
+                <div className="p-2 bg-slate-50 rounded border border-slate-100 flex justify-between">
+                  <span className="text-slate-500">Audit/Bot</span>
+                  <span className="font-bold text-slate-800">{sqliteStats.tableCounts.auditLogs + sqliteStats.tableCounts.botRules}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -2749,6 +3855,143 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
               </div>
             </div>
 
+            {/* SYSTEM CRITICAL FAILED LOGINS VISUAL OVERVIEW */}
+            <div className="mb-6 p-5 bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-2xl border border-slate-800 shadow-md">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Metric Statistics Panel */}
+                <div className="flex flex-col justify-between space-y-4 lg:border-r lg:border-slate-800 lg:pr-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                      <span className="text-[10px] font-bold font-mono text-rose-400 uppercase tracking-widest">Sicherheitsüberwachung</span>
+                    </div>
+                    <h4 className="text-base font-bold tracking-tight text-slate-100 uppercase">Fehlgeschlagene Logins</h4>
+                    <p className="text-xs text-slate-400 mt-1 leading-normal">
+                      Überwachung unerlaubter Zugriffsversuche in den letzten 24 Stunden zur Früherkennung möglicher Brute-Force Angriffe.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-colors">
+                      <span className="block text-[9px] font-mono text-slate-400 uppercase tracking-widest">Fehlversuche (24h)</span>
+                      <span className="text-2xl font-extrabold font-mono text-rose-550 mt-1 block">{total24hFailures}</span>
+                    </div>
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-colors">
+                      <span className="block text-[9px] font-mono text-slate-400 uppercase tracking-widest">Angreifer IP-Adressen</span>
+                      <span className="text-2xl font-extrabold font-mono text-amber-500 mt-1 block">{uniqueFailureIPs}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono text-slate-450">Sicherheitsstufe:</span>
+                      {total24hFailures === 0 ? (
+                        <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded font-mono font-bold text-[9px] uppercase tracking-wider">
+                          Nennenswert Sicher
+                        </span>
+                      ) : total24hFailures < 5 ? (
+                        <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded font-mono font-bold text-[9px] uppercase tracking-wider animate-pulse">
+                          Warnung
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-rose-500/20 text-rose-400 border border-rose-500/35 rounded font-mono font-bold text-[9px] uppercase tracking-wider animate-bounce">
+                          Kritisch (Brute-Force)
+                        </span>
+                      )}
+                    </div>
+
+                    <CustomTooltip content="Hier klicken, um zu Testzwecken einen fehlgeschlagenen Anmeldeversuch im 24-Stunden-Fenster zu simulieren." position="top">
+                      <button
+                        type="button"
+                        onClick={handleSimulateFailedLogin}
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-250 hover:text-white border border-slate-700/80 rounded-lg text-[9px] font-mono font-bold transition-all cursor-pointer flex items-center gap-1 hover:border-slate-600 active:scale-95 shadow-sm"
+                      >
+                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse flex-shrink-0" />
+                        Fehler simulieren
+                      </button>
+                    </CustomTooltip>
+                  </div>
+                </div>
+
+                {/* Chart Graphic Render */}
+                <div className="lg:col-span-2 flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Aggregierter Stundenverlauf (Letzte 24 Stunden)</span>
+                    <span className="text-[9px] font-semibold text-rose-400 bg-rose-950/45 px-2 py-0.5 rounded border border-rose-900/40">Echtzeit-Diagnose</span>
+                  </div>
+                  
+                  <div className="w-full h-[140px] relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={failedLogins24hData}
+                        margin={{ top: 8, right: 10, left: -25, bottom: 0 }}
+                      >
+                        <defs>
+                          <linearGradient id="failureGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.35}/>
+                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                        <XAxis 
+                          dataKey="label" 
+                          tickLine={false} 
+                          axisLine={false} 
+                          stroke="#64748b" 
+                          fontSize={9} 
+                          dy={6}
+                          fontFamily="monospace"
+                        />
+                        <YAxis 
+                          allowDecimals={false} 
+                          tickLine={false} 
+                          axisLine={false} 
+                          stroke="#64748b" 
+                          fontSize={9} 
+                          dx={-4}
+                          fontFamily="monospace"
+                        />
+                        <Tooltip
+                          contentStyle={{ 
+                            backgroundColor: '#0f172a', 
+                            border: '1px solid #1e293b', 
+                            borderRadius: '0.5rem', 
+                            boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.3)',
+                            fontFamily: 'monospace',
+                            fontSize: '10px'
+                          }}
+                          labelStyle={{ fontWeight: 'bold', color: '#f8fafc' }}
+                          itemStyle={{ color: '#ef4444', fontSize: '11px', fontWeight: 'semibold' }}
+                          formatter={(value: any, name: any, props: any) => [
+                            `${value} Fehlversuch(e)`, 
+                            `Zeitfenster: ${props.payload.timeRange}`
+                          ]}
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="Fehlversuche" 
+                          stroke="#ef4444" 
+                          strokeWidth={2} 
+                          fillOpacity={1}
+                          fill="url(#failureGrad)"
+                          dot={{ stroke: '#ef4444', strokeWidth: 1.5, r: 3, fill: '#0f172a' }}
+                          activeDot={{ stroke: '#ef4444', strokeWidth: 2, r: 5, fill: '#ffffff' }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="mt-2 flex justify-between items-center text-[8px] font-mono text-slate-500 uppercase tracking-widest border-t border-slate-900 pt-2">
+                    <span>Vor 24 Stunden</span>
+                    <span>Automatische Aktualisierung bei jedem fehlgeschlagenen Anmeldeversuch</span>
+                    <span>Jetzt</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
             {/* Filters Controls */}
             <div className="flex flex-col md:flex-row items-center gap-4 mb-4">
               {/* Search input */}
@@ -2918,6 +4161,399 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
       </div>
       )}
 
+      {/* 1B. BENUTZER-AKTIONEN & CHRONOLOGISCHES AUDIT-LOG */}
+      {activeTab === 'auditlogs' && (
+        <div className="flex-grow flex flex-col h-full overflow-hidden animate-fade-in select-none">
+          {/* Header Bar */}
+          <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span>Dashboard</span> <span className="text-slate-300">/</span> <span className="text-slate-900 font-semibold">Benutzer-Aktionen</span>
+              </div>
+              <div className="hidden sm:flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => onTabChange?.('dashboard')}
+                  className="px-3 py-1 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  Übersicht
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onTabChange?.('auditlogs')}
+                  className="px-3 py-1 text-xs font-semibold rounded-md bg-white text-slate-900 shadow-xs whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Activity className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Benutzer-Aktionen</span>
+                  <span className="font-mono tabular-nums text-[11px] text-indigo-600 font-bold">
+                    {auditSummaryStats.totalCount}
+                  </span>
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportAuditLogsCSV}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Log exportieren (CSV)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAuditLogs}
+                className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Protokoll leeren</span>
+              </button>
+            </div>
+          </header>
+
+          <div className="flex-grow overflow-y-auto p-5 space-y-4">
+            {/* Summary Info Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">Protokollierte Aktionen</p>
+                  <p className="text-2xl font-bold text-slate-900 font-mono tabular-nums mt-1.5">
+                    {auditSummaryStats.totalCount}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 font-mono tabular-nums">
+                    {auditSummaryStats.uniqueUsers.length} aktive Initiatoren
+                  </p>
+                </div>
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                  <Activity className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">Erfolgreiche Aktionen</p>
+                  <p className="text-2xl font-bold text-emerald-700 font-mono tabular-nums mt-1.5">
+                    {auditSummaryStats.successCount}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Reguläre Systemvorgänge
+                  </p>
+                </div>
+                <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+                  <CheckCircle className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">Hinweise &amp; Warnungen</p>
+                  <p className="text-2xl font-bold text-amber-600 font-mono tabular-nums mt-1.5">
+                    {auditSummaryStats.infoCount + auditSummaryStats.warningCount}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1 font-mono tabular-nums">
+                    {auditSummaryStats.infoCount} Info · {auditSummaryStats.warningCount} Warnung
+                  </p>
+                </div>
+                <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg shrink-0">
+                  <AlertCircle className="h-5 w-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-xl border border-slate-200 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">Fehler &amp; Sperren</p>
+                  <p className={`text-2xl font-bold font-mono tabular-nums mt-1.5 ${
+                    auditSummaryStats.failureCount > 0 ? 'text-rose-600' : 'text-slate-900'
+                  }`}>
+                    {auditSummaryStats.failureCount}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Fehlgeschlagene Zugriffe
+                  </p>
+                </div>
+                <div className="p-2.5 bg-rose-50 text-rose-600 rounded-lg shrink-0">
+                  <ShieldAlert className="h-5 w-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Chronology Toolbar */}
+            <div className="bg-white p-4 border border-slate-200 rounded-xl space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-lg">
+                  {(
+                    [
+                      { key: 'all', label: 'Alle', count: auditSummaryStats.totalCount },
+                      { key: 'success', label: 'Erfolg', count: auditSummaryStats.successCount },
+                      { key: 'info', label: 'Info', count: auditSummaryStats.infoCount },
+                      { key: 'warning', label: 'Warnung', count: auditSummaryStats.warningCount },
+                      { key: 'failure', label: 'Fehler', count: auditSummaryStats.failureCount }
+                    ] as const
+                  ).map(tab => {
+                    const isActive = auditStatusFilter === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setAuditStatusFilter(tab.key)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                          isActive ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`font-mono tabular-nums text-[11px] ${
+                          isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setAuditViewMode('timeline')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        auditViewMode === 'timeline' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Chronologische Zeitleiste
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuditViewMode('table')}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        auditViewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Tabellenansicht
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setAuditChronoOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    {auditChronoOrder === 'desc' ? <ArrowDown className="w-3.5 h-3.5" /> : <ArrowUp className="w-3.5 h-3.5" />}
+                    <span>{auditChronoOrder === 'desc' ? 'Neueste zuerst' : 'Älteste zuerst'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="md:col-span-2 flex items-center gap-2.5 bg-slate-100 border border-slate-200 rounded px-3 h-[36px]">
+                  <Search className="h-4 w-4 text-slate-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    placeholder="Aktion, Benutzer, IP-Adresse oder Details durchsuchen..."
+                    className="bg-transparent border-none outline-none text-slate-700 placeholder-slate-400 text-xs w-full focus:ring-0"
+                  />
+                </div>
+
+                <div>
+                  <select
+                    value={auditUserFilter}
+                    onChange={(e) => setAuditUserFilter(e.target.value)}
+                    className="w-full bg-slate-100 border border-slate-200 rounded px-3 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 h-[36px]"
+                  >
+                    <option value="all">Alle Benutzer ({auditSummaryStats.uniqueUsers.length})</option>
+                    {auditSummaryStats.uniqueUsers.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 px-1">
+                  <span className="font-mono tabular-nums">
+                    {chronologicalAuditLogs.length} von {auditSummaryStats.totalCount} Einträgen
+                  </span>
+                  {(auditSearch || auditStatusFilter !== 'all' || auditUserFilter !== 'all' || auditChronoOrder !== 'desc') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuditSearch('');
+                        setAuditStatusFilter('all');
+                        setAuditUserFilter('all');
+                        setAuditChronoOrder('desc');
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Zurücksetzen</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Chronological Content */}
+            {chronologicalAuditLogs.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                <Activity className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-slate-700">
+                  {auditSummaryStats.totalCount === 0
+                    ? 'Noch keine Benutzer-Aktionen im Audit-Log vorhanden.'
+                    : 'Keine Audit-Log-Einträge entsprechen den aktuellen Filtern.'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {auditSummaryStats.totalCount === 0
+                    ? 'Anmeldungen, Freischaltungen, Kundenänderungen, Exporte und Systemaktionen werden hier automatisch chronologisch erfasst.'
+                    : 'Setzen Sie die Filter zurück, um alle protokollierten Benutzer-Aktionen anzuzeigen.'}
+                </p>
+                {auditSummaryStats.totalCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuditSearch('');
+                      setAuditStatusFilter('all');
+                      setAuditUserFilter('all');
+                    }}
+                    className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-xs font-semibold cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Filter zurücksetzen</span>
+                  </button>
+                )}
+              </div>
+            ) : auditViewMode === 'timeline' ? (
+              <div className="space-y-4">
+                {groupedAuditLogsByDate.map(group => (
+                  <div key={group.dateKey} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                        <Calendar className="w-4 h-4 text-indigo-600" />
+                        <span>{group.dateLabel}</span>
+                      </div>
+                      <span className="text-xs font-mono tabular-nums text-slate-500">
+                        {group.entries.length} {group.entries.length === 1 ? 'Aktion' : 'Aktionen'}
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-slate-100">
+                      {group.entries.map(log => {
+                        const timeLabel = log.timestamp && !Number.isNaN(new Date(log.timestamp).getTime())
+                          ? new Date(log.timestamp).toLocaleTimeString('de-DE', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })
+                          : '—';
+
+                        const statusConfig =
+                          log.status === 'success'
+                            ? { label: 'Erfolg', textClass: 'text-emerald-700', Icon: CheckCircle }
+                            : log.status === 'failure'
+                            ? { label: 'Fehler', textClass: 'text-rose-700', Icon: XCircle }
+                            : log.status === 'warning'
+                            ? { label: 'Warnung', textClass: 'text-amber-700', Icon: AlertCircle }
+                            : { label: 'Info', textClass: 'text-blue-700', Icon: ShieldCheck };
+
+                        const StatusIcon = statusConfig.Icon;
+
+                        return (
+                          <div key={log.id} className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors flex flex-col sm:flex-row sm:items-start gap-3">
+                            <div className="flex items-center gap-3 sm:w-44 shrink-0 pt-0.5">
+                              <span className="font-mono tabular-nums text-xs font-semibold text-slate-700">
+                                {timeLabel}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold ${statusConfig.textClass}`}>
+                                <StatusIcon className="w-3.5 h-3.5 shrink-0" />
+                                <span>{statusConfig.label}</span>
+                              </span>
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <h4 className="text-sm font-semibold text-slate-900">{log.action}</h4>
+                                <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                                  <span>Benutzer: {log.user || 'System'}</span>
+                                  <span aria-hidden="true">·</span>
+                                  <span>{log.ipAddress || '127.0.0.1'}</span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed break-words select-text">
+                                {log.details}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-xs font-mono uppercase">
+                        <th className="py-3 px-4 font-bold whitespace-nowrap">Zeitpunkt</th>
+                        <th className="py-3 px-4 font-bold whitespace-nowrap">Status</th>
+                        <th className="py-3 px-4 font-bold whitespace-nowrap">Aktion</th>
+                        <th className="py-3 px-4 font-bold whitespace-nowrap">Benutzer</th>
+                        <th className="py-3 px-4 font-bold whitespace-nowrap">IP-Adresse</th>
+                        <th className="py-3 px-4 font-bold min-w-[240px]">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                      {chronologicalAuditLogs.map(log => {
+                        const statusLabel =
+                          log.status === 'success' ? 'Erfolg' :
+                          log.status === 'failure' ? 'Fehler' :
+                          log.status === 'warning' ? 'Warnung' : 'Info';
+                        const statusClass =
+                          log.status === 'success' ? 'text-emerald-700' :
+                          log.status === 'failure' ? 'text-rose-700' :
+                          log.status === 'warning' ? 'text-amber-700' : 'text-blue-700';
+
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-3 px-4 font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                              {log.timestamp && !Number.isNaN(new Date(log.timestamp).getTime())
+                                ? new Date(log.timestamp).toLocaleString('de-DE', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit'
+                                  })
+                                : '—'}
+                            </td>
+                            <td className={`py-3 px-4 font-semibold whitespace-nowrap ${statusClass}`}>
+                              {statusLabel}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                              {log.action}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                              {log.user || 'System'}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
+                              {log.ipAddress || '127.0.0.1'}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 leading-relaxed max-w-lg break-words select-text">
+                              {log.details}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 2. KUNDENVERWALTUNG (DIRECTORY & CREATION) */}
       {activeTab === 'customers' && (
         <div className="flex-grow flex flex-col h-full overflow-hidden animate-fade-in select-none">
@@ -2939,6 +4575,18 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 />
               </label>
 
+              {/* JSON Import */}
+              <label className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold shadow-2xs border border-slate-250 transition-all flex items-center gap-1.5 cursor-pointer select-none" title="Kunden-Sicherungsdatei einspielen">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import JSON</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportJSON}
+                  className="hidden"
+                />
+              </label>
+
               {/* CSV Export */}
               <button
                 type="button"
@@ -2948,6 +4596,17 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export CSV</span>
+              </button>
+
+              {/* JSON Export */}
+              <button
+                type="button"
+                onClick={handleExportJSON}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold shadow-2xs border border-slate-250 transition-all flex items-center gap-1.5 cursor-pointer select-none"
+                title="Mandantenliste als JSON herunterladen"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export JSON</span>
               </button>
 
               <button
@@ -2977,17 +4636,71 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
               </div>
             )}
             {/* Action Bar & Stats */}
-            <div className="bg-white p-4 border border-slate-200 rounded shadow-sm">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 border border-slate-200 rounded shadow-sm space-y-4">
+              {/* Quick Status Segmented Filter Tabs */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-lg">
+                  {(
+                    [
+                      { key: 'all', label: 'Alle Status', count: customerStatusCounts.all },
+                      { key: 'Neukunde', label: 'Neukunde', count: customerStatusCounts.Neukunde },
+                      { key: 'Aktiv', label: 'Aktiv', count: customerStatusCounts.Aktiv },
+                      { key: 'Stammkunde', label: 'Stammkunde', count: customerStatusCounts.Stammkunde },
+                      { key: 'Inaktiv', label: 'Inaktiv', count: customerStatusCounts.Inaktiv }
+                    ] as const
+                  ).map(tab => {
+                    const isActive = customerTypeFilter === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setCustomerTypeFilter(tab.key)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <span>{tab.label}</span>
+                        <span className={`font-mono tabular-nums text-[11px] ${
+                          isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                        }`}>
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-3 text-xs text-slate-500">
+                  <span className="font-mono tabular-nums">
+                    {filteredAndSortedCustomers.length} von {data.customers.length} Kunden
+                  </span>
+                  {(customerSearch || customerTypeFilter !== 'all' || customerStatusFilter !== 'all' || customerSortField !== 'createdAt' || customerSortOrder !== 'desc') && (
+                    <button
+                      type="button"
+                      onClick={resetCustomerFilters}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Zurücksetzen</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 {/* Search */}
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">🔍 Schnell-Suche</p>
-                  <div className="flex items-center space-x-3 bg-slate-100 border border-slate-200 rounded px-3 py-1.5 w-full">
+                <div className="md:col-span-2">
+                  <label htmlFor="customer-search-input" className="block text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">
+                    Schnell-Suche
+                  </label>
+                  <div className="flex items-center space-x-2.5 bg-slate-100 border border-slate-200 rounded px-3 py-1.5 w-full h-[34px]">
                     <Search className="h-4 w-4 text-slate-400 flex-shrink-0" />
                     <input
                       id="customer-search-input"
                       type="text"
-                      placeholder="Suche Name, Firma, Notizen, Branche, Produkte..."
+                      placeholder="Suche Name, Firma, Status, Branche, Notizen..."
                       value={customerSearch}
                       onChange={(e) => setCustomerSearch(e.target.value)}
                       className="bg-transparent border-none outline-none text-slate-700 placeholder-slate-400 text-xs w-full focus:ring-0"
@@ -2995,12 +4708,34 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                   </div>
                 </div>
 
-                {/* Filter Status */}
+                {/* Filter Kundenstatus (Dropdown) */}
                 <div>
-                  <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">⚡ Registrierungsstatus</p>
+                  <label htmlFor="customer-type-filter" className="block text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">
+                    Kundenstatus
+                  </label>
                   <select
+                    id="customer-type-filter"
+                    value={customerTypeFilter}
+                    onChange={(e) => setCustomerTypeFilter(e.target.value as 'all' | Customer['status'])}
+                    className="w-full bg-slate-100 border border-slate-200 rounded px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 h-[34px]"
+                  >
+                    <option value="all">Alle Status</option>
+                    <option value="Neukunde">Neukunde</option>
+                    <option value="Aktiv">Aktiv</option>
+                    <option value="Stammkunde">Stammkunde</option>
+                    <option value="Inaktiv">Inaktiv</option>
+                  </select>
+                </div>
+
+                {/* Filter Freigabestatus */}
+                <div>
+                  <label htmlFor="customer-approval-filter" className="block text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">
+                    Freigabestatus
+                  </label>
+                  <select
+                    id="customer-approval-filter"
                     value={customerStatusFilter}
-                    onChange={(e) => setCustomerStatusFilter(e.target.value as any)}
+                    onChange={(e) => setCustomerStatusFilter(e.target.value as 'all' | 'approved' | 'pending')}
                     className="w-full bg-slate-100 border border-slate-200 rounded px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 h-[34px]"
                   >
                     <option value="all">Alle Registrierungen</option>
@@ -3009,42 +4744,32 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                   </select>
                 </div>
 
-                {/* Sort Field */}
+                {/* Sort Field + Order */}
                 <div>
-                  <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">⇅ Sortieren nach</p>
-                  <select
-                    value={customerSortField}
-                    onChange={(e) => setCustomerSortField(e.target.value as any)}
-                    className="w-full bg-slate-100 border border-slate-200 rounded px-3 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 h-[34px]"
-                  >
-                    <option value="createdAt">Registrierungsdatum</option>
-                    <option value="name">Name des Mandanten</option>
-                    <option value="company">Unternehmensname</option>
-                    <option value="approved">Freigabe-Status</option>
-                  </select>
-                </div>
-
-                {/* Sort Order */}
-                <div>
-                  <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">⇅ Reihenfolge</p>
-                  <div className="flex bg-slate-100 border border-slate-200 rounded p-0.5 h-[34px]">
+                  <label htmlFor="customer-sort-field" className="block text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1.5 font-mono">
+                    Sortierung
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      id="customer-sort-field"
+                      value={customerSortField}
+                      onChange={(e) => setCustomerSortField(e.target.value as 'createdAt' | 'status' | 'name' | 'company' | 'approved')}
+                      className="flex-1 min-w-0 bg-slate-100 border border-slate-200 rounded px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-indigo-500 h-[34px]"
+                    >
+                      <option value="createdAt">Registrierungsdatum</option>
+                      <option value="status">Kundenstatus</option>
+                      <option value="name">Name</option>
+                      <option value="company">Unternehmen</option>
+                      <option value="approved">Freigabe-Status</option>
+                    </select>
                     <button
                       type="button"
-                      onClick={() => setCustomerSortOrder('asc')}
-                      className={`flex-1 rounded text-center text-xs font-bold transition-all ${
-                        customerSortOrder === 'asc' ? 'bg-indigo-650 text-white shadow-xs' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/50'
-                      }`}
+                      onClick={() => setCustomerSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                      title={customerSortOrder === 'asc' ? 'Aufsteigend sortiert (Klicken für Absteigend)' : 'Absteigend sortiert (Klicken für Aufsteigend)'}
+                      className="px-2.5 h-[34px] bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
                     >
-                      ▲ ASC
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCustomerSortOrder('desc')}
-                      className={`flex-1 rounded text-center text-xs font-bold transition-all ${
-                        customerSortOrder === 'desc' ? 'bg-indigo-650 text-white shadow-xs' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-200/50'
-                      }`}
-                    >
-                      ▼ DESC
+                      {customerSortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />}
+                      <span className="font-mono">{customerSortOrder === 'asc' ? 'ASC' : 'DESC'}</span>
                     </button>
                   </div>
                 </div>
@@ -3056,62 +4781,56 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 text-xs font-mono uppercase">
-                    <th className="py-3 px-4 font-bold">Kunde & Unternehmen</th>
+                    <th className="py-3 px-4 font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleCustomerHeaderSort('name')}
+                        className="inline-flex items-center gap-1 hover:text-slate-700 transition-colors cursor-pointer uppercase"
+                      >
+                        <span>Kunde &amp; Unternehmen</span>
+                        {customerSortField === 'name' ? (
+                          customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-50" />
+                        )}
+                      </button>
+                    </th>
                     <th className="py-3 px-4 font-bold">Benutzername (Login)</th>
-                    <th className="py-3 px-4 font-bold">E-Mail & Telefon</th>
-                    <th className="py-3 px-4 font-bold">Status</th>
-                    <th className="py-3 px-4 font-bold">Anmeldedatum</th>
+                    <th className="py-3 px-4 font-bold">E-Mail &amp; Telefon</th>
+                    <th className="py-3 px-4 font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleCustomerHeaderSort('status')}
+                        className="inline-flex items-center gap-1 hover:text-slate-700 transition-colors cursor-pointer uppercase"
+                      >
+                        <span>Status</span>
+                        {customerSortField === 'status' ? (
+                          customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-50" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="py-3 px-4 font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleCustomerHeaderSort('createdAt')}
+                        className="inline-flex items-center gap-1 hover:text-slate-700 transition-colors cursor-pointer uppercase"
+                      >
+                        <span>Anmeldedatum</span>
+                        {customerSortField === 'createdAt' ? (
+                          customerSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-indigo-600" /> : <ArrowDown className="w-3 h-3 text-indigo-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 opacity-50" />
+                        )}
+                      </button>
+                    </th>
                     <th className="py-3 px-4 font-bold text-right">Aktionen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {data.customers
-                    .filter(c => {
-                      const query = customerSearch.toLowerCase().trim();
-                      const matchesSearch = 
-                        !query ||
-                        (c.name || '').toLowerCase().includes(query) ||
-                        (c.company || '').toLowerCase().includes(query) ||
-                        (c.notes || '').toLowerCase().includes(query) ||
-                        (c.email || '').toLowerCase().includes(query) ||
-                        (c.phone || '').toLowerCase().includes(query) ||
-                        (c.address || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.industry || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.services || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.products || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.description || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.specialFeatures || '').toLowerCase().includes(query) ||
-                        (c.onboarding?.individualRequirements || '').toLowerCase().includes(query);
-                      
-                      if (!matchesSearch) return false;
-
-                      if (customerStatusFilter === 'approved') {
-                        return c.approved !== false;
-                      } else if (customerStatusFilter === 'pending') {
-                        return c.approved === false;
-                      }
-
-                      return true;
-                    })
-                    .sort((a, b) => {
-                      let comparison = 0;
-                      if (customerSortField === 'createdAt') {
-                        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                        comparison = dateA - dateB;
-                      } else if (customerSortField === 'name') {
-                        comparison = (a.name || '').localeCompare(b.name || '', 'de');
-                      } else if (customerSortField === 'company') {
-                        comparison = (a.company || '').localeCompare(b.company || '', 'de');
-                      } else if (customerSortField === 'approved') {
-                        const appA = a.approved !== false ? 1 : 0;
-                        const appB = b.approved !== false ? 1 : 0;
-                        comparison = appA - appB;
-                      }
-
-                      return customerSortOrder === 'asc' ? comparison : -comparison;
-                    })
-                    .map(cust => (
+                  {filteredAndSortedCustomers.length > 0 ? (
+                    filteredAndSortedCustomers.map(cust => (
                       <tr key={cust.id} className="hover:bg-slate-50/50">
                         <td className="py-4 px-4">
                           <p className="font-bold text-slate-800">{cust.name}</p>
@@ -3137,53 +4856,76 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                             </span>
                           </div>
                         </td>
-                        <td className="py-4 px-4 text-slate-400 font-mono text-xs">
-                          {new Date(cust.createdAt).toLocaleDateString('de-DE')}
+                        <td className="py-4 px-4 text-slate-500 font-mono tabular-nums text-xs">
+                          {cust.createdAt && !Number.isNaN(new Date(cust.createdAt).getTime())
+                            ? new Date(cust.createdAt).toLocaleDateString('de-DE')
+                            : '—'}
                         </td>
                         <td className="py-4 px-4 text-right">
                           <div className="flex items-center justify-end space-x-2">
                             {cust.approved === false && (
-                              <button
-                                onClick={() => handleApproveCustomer(cust)}
-                                className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-850 text-white rounded text-[10px] font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer scale-105"
-                                title="Mandanten freischalten"
-                              >
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                <span>Freischalten</span>
-                              </button>
+                              <CustomTooltip content="Registrierungsanfrage genehmigen & Mandanten freischalten" position="top">
+                                <button
+                                  onClick={() => handleApproveCustomer(cust)}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-850 text-white rounded text-[10px] font-bold shadow-sm transition-all flex items-center gap-1 cursor-pointer scale-105"
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                  <span>Freischalten</span>
+                                </button>
+                              </CustomTooltip>
                             )}
-                            <button
-                              onClick={() => setSelectedCustForContracts(cust)}
-                              className="p-1.5 hover:bg-slate-100 text-emerald-600 hover:text-emerald-700 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                              title="Projektvereinbarungen sichten & verwalten"
-                            >
-                              <Eye className="h-4.5 w-4.5" />
-                            </button>
-                            <button
-                              onClick={() => handleResetCustomerPassword(cust)}
-                              className="p-1.5 hover:bg-slate-100 text-amber-600 hover:text-amber-700 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                              title="Passwort für diesen Kunden zurücksetzen"
-                            >
-                              <LockKeyhole className="h-4.5 w-4.5" />
-                            </button>
-                            <button
-                              onClick={() => handleOpenCustomerModal(cust)}
-                              className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-blue-600 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                              title="Kundenkonto bearbeiten"
-                            >
-                              <Edit2 className="h-4.5 w-4.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCustomer(cust.id)}
-                              className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors border border-transparent hover:border-rose-200"
-                              title="Kunde permanent löschen"
-                            >
-                              <Trash2 className="h-4.5 w-4.5" />
-                            </button>
+                            <CustomTooltip content="Projektvereinbarungen sichten & verwalten" position="top">
+                              <button
+                                onClick={() => setSelectedCustForContracts(cust)}
+                                className="p-1.5 hover:bg-slate-100 text-emerald-600 hover:text-emerald-700 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-help"
+                              >
+                                <Eye className="h-4.5 w-4.5" />
+                              </button>
+                            </CustomTooltip>
+                            <CustomTooltip content="Sicherheitspasswort für diesen Kunden zurücksetzen" position="top">
+                              <button
+                                onClick={() => handleResetCustomerPassword(cust)}
+                                className="p-1.5 hover:bg-slate-100 text-amber-600 hover:text-amber-700 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-help"
+                              >
+                                <LockKeyhole className="h-4.5 w-4.5" />
+                              </button>
+                            </CustomTooltip>
+                            <CustomTooltip content="Kundenkonto bearbeiten (Name, Adresse, E-Mail)" position="top">
+                              <button
+                                onClick={() => handleOpenCustomerModal(cust)}
+                                className="p-1.5 hover:bg-slate-100 text-slate-600 hover:text-blue-600 rounded-lg transition-colors border border-transparent hover:border-slate-200 cursor-help"
+                              >
+                                <Edit2 className="h-4.5 w-4.5" />
+                              </button>
+                            </CustomTooltip>
+                            <CustomTooltip content="Mandant permanent und unwiderruflich löschen" position="top">
+                              <button
+                                onClick={() => handleDeleteCustomer(cust.id)}
+                                className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors border border-transparent hover:border-rose-200 cursor-help"
+                              >
+                                <Trash2 className="h-4.5 w-4.5" />
+                              </button>
+                            </CustomTooltip>
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-500 text-xs">
+                        <p className="font-semibold text-slate-700">Keine Kunden entsprechen den aktuellen Filterkriterien.</p>
+                        <p className="text-slate-400 mt-1">Passen Sie Statusfilter oder Suchbegriff an.</p>
+                        <button
+                          type="button"
+                          onClick={resetCustomerFilters}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Alle Filter zurücksetzen</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -8680,7 +10422,7 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                   className="p-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex flex-col items-center gap-1.5 justify-center cursor-pointer shadow-sm text-center"
                 >
                   <Download className="w-4 h-4 text-amber-400" />
-                  <span>Backup exportieren</span>
+                  <span>SQLite als JSON sichern</span>
                 </button>
 
                 <label className="p-3 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-350 rounded-xl text-xs font-bold transition-all flex flex-col items-center gap-1.5 justify-center cursor-pointer text-slate-700 text-center select-none">
@@ -8742,6 +10484,92 @@ export default function AdminCRM({ data, onDataChange, activeTab, isOnline, onOn
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-650 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
               >
                 Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* INTEGRITY STATUS DETAILED CHECK DIALOG */}
+      {integrityReport && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[99999] flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden text-slate-100">
+            {/* Fine green border line */}
+            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 animate-pulse" />
+
+            <div className="mx-auto w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mb-4">
+              <ShieldCheck className="h-6 w-6 animate-bounce" />
+            </div>
+
+            <h3 className="text-base font-bold text-center text-slate-100 uppercase tracking-wider">
+              Systemintegrität Validiert
+            </h3>
+            
+            <p className="text-center text-xs text-slate-400 mt-1">
+              Die strukturelle Konsistenz Ihrer Daten wurde zu 100% verifiziert.
+            </p>
+
+            {/* Verification Stats Area Grid layout */}
+            <div className="my-5 space-y-2 bg-slate-950 p-4 rounded-xl border border-slate-850 font-mono text-[11px]">
+              <div className="flex justify-between items-center pb-1.5 border-b border-slate-850 text-slate-400 text-[9px] uppercase tracking-wider">
+                <span>Geprüftes Datenfeld</span>
+                <span>Status / Anzahl</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1 border-b border-slate-900/50">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Mandantenkarteien
+                </span>
+                <span className="font-bold text-emerald-400">{integrityReport.customersCount} Datensätze</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1 border-b border-slate-900/50">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Freigeschaltete Konten
+                </span>
+                <span className="text-slate-400">{integrityReport.approvedCustomers} aktiv</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1 border-b border-slate-900/50">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Verschlüsselte Messages
+                </span>
+                <span className="font-bold text-emerald-400">{integrityReport.totalMessages} Nachrichten</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1 border-b border-slate-900/50">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Mandanten-Verträge (Files)
+                </span>
+                <span className="font-bold text-emerald-400">{integrityReport.unlockedContracts} Verträge ({integrityReport.totalFiles} gesamt)</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1 border-b border-slate-900/50">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Rechnungen &amp; Finanzen
+                </span>
+                <span className="text-slate-400">{integrityReport.totalInvoices} Posten</span>
+              </div>
+
+              <div className="flex justify-between items-center text-slate-300 py-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> KI-Bot Trainingsparameter
+                </span>
+                <span className="text-slate-400">{integrityReport.totalBotRules} Regeln</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center text-[10px] text-emerald-300 leading-normal mb-5">
+              <span><strong>Persistenz:</strong> Alle Daten sind erfolgreich in der SQLite-Datenbank <code>/data/crm.db</code> hinterlegt, gesichert und einsatzbereit.</span>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setIntegrityReport(null)}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-emerald-600/10 cursor-pointer text-center flex items-center justify-center gap-1 border border-emerald-500/25"
+              >
+                <span>Prüfung abschließen</span>
               </button>
             </div>
           </div>

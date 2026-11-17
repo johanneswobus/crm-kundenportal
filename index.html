@@ -4,6 +4,63 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CRM Tatjana Haßmann - Beratung</title>
+    <script>
+      // Polyfill ErrorEvent if the host sandbox defines it as non-constructible
+      try {
+        new window.ErrorEvent('test-error-constructor');
+      } catch (e) {
+        console.warn('Polyfilling ErrorEvent as the host environment restricts its constructibility:', e.message);
+        try {
+          // Construct a safe, compliant event wrapper mimicking the standard ErrorEvent interface
+          const CustomErrorEvent = function(type, options) {
+            const opts = options || {};
+            // Construct a standard constructible target Event
+            const event = new Event(type, opts);
+            Object.defineProperty(event, 'message', { value: opts.message || '', enumerable: true, configurable: true });
+            Object.defineProperty(event, 'filename', { value: opts.filename || '', enumerable: true, configurable: true });
+            Object.defineProperty(event, 'lineno', { value: opts.lineno || 0, enumerable: true, configurable: true });
+            Object.defineProperty(event, 'colno', { value: opts.colno || 0, enumerable: true, configurable: true });
+            Object.defineProperty(event, 'error', { value: opts.error || null, enumerable: true, configurable: true });
+            return event;
+          };
+          CustomErrorEvent.prototype = Object.create(Event.prototype);
+          CustomErrorEvent.prototype.constructor = CustomErrorEvent;
+          window.ErrorEvent = CustomErrorEvent;
+        } catch (err) {
+          console.error('Failed to apply ErrorEvent constructor patch:', err);
+        }
+      }
+
+      // Diagnostic interception at the earliest possible milestone
+      window.addEventListener('error', (event) => {
+        const errorInfo = {
+          type: 'uncaught_error_early',
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error?.stack || 'No stack trace'
+        };
+        fetch('/api/debug-log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(() => {});
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        const errorInfo = {
+          type: 'unhandled_rejection_early',
+          message: event.reason?.message || String(event.reason),
+          stack: event.reason?.stack || 'No stack trace'
+        };
+        fetch('/api/debug-log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(errorInfo)
+        }).catch(() => {});
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

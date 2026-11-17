@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CRMData, Customer, AuditLog } from './types';
-import { loadCRMData, saveCRMData, hashPassword, fetchServerCRMData, saveServerCRMData } from './storage';
+import { loadCRMData, saveCRMData, hashPassword, fetchServerCRMData, saveServerCRMData, fetchSQLiteStatus, SQLiteStats } from './storage';
 import Sidebar from './components/Sidebar';
 import AdminCRM from './components/AdminCRM';
 import CustomerPortal from './components/CustomerPortal';
+import Tooltip from './components/Tooltip';
 import { Lock, User, FileText, LayoutDashboard, Key, ShieldAlert, Check, X } from 'lucide-react';
 
 const getPasswordRules = (password: string) => {
@@ -82,6 +83,11 @@ const generateStrongPassword = (customSpecialChars?: string): string => {
 export default function App() {
   // --- APPLICATION STATE ---
   const [data, setData] = useState<CRMData>(loadCRMData());
+  const [lastSaved, setLastSaved] = useState<Date | null>(new Date());
+  const [syncStatus, setSyncStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [sqliteStats, setSqliteStats] = useState<SQLiteStats | null>(null);
+  const isServerHydratedRef = useRef(false);
+  const skipNextServerSaveRef = useRef(false);
 
   const addAuditLog = (action: string, user: string, details: string, status: 'success' | 'failure' | 'warning' | 'info') => {
     const newLog: AuditLog = {
@@ -162,35 +168,59 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [lockoutUntil]);
 
-  // Synchronize state changes directly with localStorage and the server if online
+  // Synchronize state changes directly with localStorage and SQLite server if online
   useEffect(() => {
     saveCRMData(data);
-    if (isOnline) {
-      saveServerCRMData(data).catch(err => {
-        console.error('Failed to sync changes to server', err);
-      });
+    if (!isOnline) return;
+    if (!isServerHydratedRef.current) return;
+    if (skipNextServerSaveRef.current) {
+      skipNextServerSaveRef.current = false;
+      return;
     }
+
+    setSyncStatus('saving');
+    saveServerCRMData(data)
+      .then((stats) => {
+        if (stats) setSqliteStats(stats);
+        setSyncStatus('saved');
+        setLastSaved(new Date());
+      })
+      .catch(err => {
+        console.error('Failed to sync changes to SQLite database', err);
+        setSyncStatus('error');
+      });
   }, [data, isOnline]);
 
-  // Load backend data on startup and poll periodically to stay in sync with server state
+  // Load SQLite database state on startup and poll periodically to stay in sync
   useEffect(() => {
     let isMounted = true;
 
     async function syncWithServer() {
       if (!isOnline) return;
       try {
-        const serverData = await fetchServerCRMData();
+        const [serverData, stats] = await Promise.all([
+          fetchServerCRMData(),
+          fetchSQLiteStatus().catch(() => null)
+        ]);
         if (isMounted) {
+          isServerHydratedRef.current = true;
+          if (stats) setSqliteStats(stats);
           setData(prev => {
-            // Structurally compare serialized data to prevent unneeded re-renders
             if (JSON.stringify(prev) === JSON.stringify(serverData)) {
               return prev;
             }
+            skipNextServerSaveRef.current = true;
+            saveCRMData(serverData);
             return serverData;
           });
+          setLastSaved(new Date());
+          setSyncStatus('saved');
         }
       } catch (err) {
-        console.error('Error fetching newest database state from server', err);
+        console.error('Error fetching newest database state from SQLite server', err);
+        if (isMounted && !isServerHydratedRef.current) {
+          isServerHydratedRef.current = true;
+        }
       }
     }
 
@@ -205,6 +235,39 @@ export default function App() {
       clearInterval(intervalId);
     };
   }, [isOnline]);
+
+  const handleReloadFromSQLite = async () => {
+    setSyncStatus('saving');
+    const [serverData, stats] = await Promise.all([
+      fetchServerCRMData(),
+      fetchSQLiteStatus().catch(() => null)
+    ]);
+    isServerHydratedRef.current = true;
+    skipNextServerSaveRef.current = true;
+    saveCRMData(serverData);
+    setData(serverData);
+    if (stats) setSqliteStats(stats);
+    setLastSaved(new Date());
+    setSyncStatus('saved');
+  };
+
+  const handleForceSaveSQLite = async () => {
+    setSyncStatus('saving');
+    const stats = await saveServerCRMData(data);
+    if (stats) setSqliteStats(stats);
+    setLastSaved(new Date());
+    setSyncStatus('saved');
+  };
+
+  const handleApplyImportedSQLite = (importedData: CRMData, stats: SQLiteStats) => {
+    isServerHydratedRef.current = true;
+    skipNextServerSaveRef.current = true;
+    saveCRMData(importedData);
+    setData(importedData);
+    setSqliteStats(stats);
+    setLastSaved(new Date());
+    setSyncStatus('saved');
+  };
 
   // Try to recover session from sessionStorage for browser refreshes
   useEffect(() => {
@@ -446,10 +509,19 @@ export default function App() {
       }
     }, 1000);
 
+    const handleExtendSession = () => {
+      resetTimer();
+    };
+
+    (window as any).extendSession = handleExtendSession;
+
     // Listen to user activity events
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     const handleActivity = () => {
-      resetTimer();
+      // Only auto-reset standard activity when we are NOT in the final 60-second countdown
+      if (secondsLeft > 60) {
+        resetTimer();
+      }
     };
 
     events.forEach(event => {
@@ -458,6 +530,9 @@ export default function App() {
 
     return () => {
       clearInterval(intervalId);
+      if ((window as any).extendSession === handleExtendSession) {
+        delete (window as any).extendSession;
+      }
       events.forEach(event => {
         window.removeEventListener(event, handleActivity);
       });
@@ -559,6 +634,8 @@ export default function App() {
             onTabChange={setActiveTab}
             onLogout={handleLogout}
             unreadCount={unreadMessagesCount}
+            syncStatus={syncStatus}
+            lastSaved={lastSaved}
           />
           
           <main className="flex-1 flex flex-col h-full overflow-hidden">
@@ -571,6 +648,10 @@ export default function App() {
                 onOnlineToggle={handleSetOnline}
                 onTabChange={setActiveTab}
                 secondsRemaining={secondsRemaining}
+                sqliteStats={sqliteStats}
+                onReloadFromSQLite={handleReloadFromSQLite}
+                onForceSaveSQLite={handleForceSaveSQLite}
+                onApplyImportedSQLite={handleApplyImportedSQLite}
               />
             ) : (
               loggedInCustomer ? (
@@ -632,7 +713,7 @@ export default function App() {
             <div className="w-full max-w-md space-y-8 relative z-10 py-6">
               {isRegistering ? (
                 /* CLIENT REGISTRATION FORM */
-                <div className="space-y-6">
+                <div key="register-form" className="space-y-6 animate-fade-in">
                   <div className="text-center lg:text-left">
                     <h2 className="text-xl font-bold text-white tracking-tight uppercase">Mandanten-Registrierung</h2>
                     <p className="text-xs text-slate-400 mt-1">Erstellen Sie ein neues Konto. Die Freischaltung erfolgt manuell durch den Administrator.</p>
@@ -742,19 +823,20 @@ export default function App() {
                         <div>
                           <div className="flex justify-between items-center mb-1">
                             <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest">Passwort *</label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const pass = generateStrongPassword(allowedSpecialSymbols.join(''));
-                                setRegPassword(pass);
-                                setShowRegPassword(true);
-                              }}
-                              className="text-[9px] text-blue-400 hover:text-blue-300 font-bold transition-all cursor-pointer flex items-center gap-1 font-mono"
-                              title="Ein sicheres, zufälliges Passwort automatisch generieren"
-                            >
-                              <Key className="w-2.5 h-2.5 animate-pulse" />
-                              <span>Generieren</span>
-                            </button>
+                            <Tooltip content="Zufälliges, starkes Passwort aus den erlaubten Sonderzeichen generieren" position="left">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pass = generateStrongPassword(allowedSpecialSymbols.join(''));
+                                  setRegPassword(pass);
+                                  setShowRegPassword(true);
+                                }}
+                                className="text-[9px] text-blue-400 hover:text-blue-300 font-bold transition-all cursor-pointer flex items-center gap-1 font-mono"
+                              >
+                                <Key className="w-2.5 h-2.5 animate-pulse" />
+                                <span>Generieren</span>
+                              </button>
+                            </Tooltip>
                           </div>
                           <div className="relative">
                             <input
@@ -785,24 +867,25 @@ export default function App() {
                           {['!', '@', '#', '$', '%', '&', '*', '?', '_', '-'].map((sym) => {
                             const isSelected = allowedSpecialSymbols.includes(sym);
                             return (
-                              <button
-                                key={sym}
-                                type="button"
-                                onClick={() => {
-                                  if (isSelected) {
-                                    setAllowedSpecialSymbols(allowedSpecialSymbols.filter(s => s !== sym));
-                                  } else {
-                                    setAllowedSpecialSymbols([...allowedSpecialSymbols, sym]);
-                                  }
-                                }}
-                                className={`h-7 rounded flex items-center justify-center font-mono text-xs font-bold transition-all border cursor-pointer ${
-                                  isSelected 
-                                    ? 'bg-blue-600/35 border-blue-500 text-blue-300 shadow-xs' 
-                                    : 'bg-slate-900/50 border-slate-850 text-slate-500 hover:border-slate-800 hover:text-slate-350'
-                                }`}
-                              >
-                                {sym}
-                              </button>
+                              <Tooltip key={sym} content={`${isSelected ? 'Ausschließen' : 'Einschließen'}: '${sym}' im Passwort-Generator`} className="w-full" position="top">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isSelected) {
+                                      setAllowedSpecialSymbols(allowedSpecialSymbols.filter(s => s !== sym));
+                                    } else {
+                                      setAllowedSpecialSymbols([...allowedSpecialSymbols, sym]);
+                                    }
+                                  }}
+                                  className={`w-full h-7 rounded flex items-center justify-center font-mono text-xs font-bold transition-all border cursor-pointer ${
+                                    isSelected 
+                                      ? 'bg-blue-600/35 border-blue-500 text-blue-300 shadow-xs' 
+                                      : 'bg-slate-900/50 border-slate-850 text-slate-500 hover:border-slate-800 hover:text-slate-350'
+                                  }`}
+                                >
+                                  {sym}
+                                </button>
+                              </Tooltip>
                             );
                           })}
                         </div>
@@ -840,16 +923,18 @@ export default function App() {
                             </p>
                             <div className="grid grid-cols-1 gap-1 text-[9px]">
                               {getPasswordRules(regPassword).map((rule, idx) => (
-                                <div key={idx} className="flex items-center gap-1.5 font-mono">
-                                  {rule.met ? (
-                                    <Check className="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                                  ) : (
-                                    <X className="w-3 h-3 text-rose-500 flex-shrink-0" />
-                                  )}
-                                  <span className={rule.met ? 'text-slate-350 line-through decoration-slate-600/60' : 'text-slate-450'}>
-                                    {rule.label}
-                                  </span>
-                                </div>
+                                <Tooltip key={idx} content={rule.met ? `Erfüllt: ${rule.label}` : `Ausstehend: ${rule.label}`} className="w-full" position="right">
+                                  <div className="flex items-center gap-1.5 font-mono cursor-help">
+                                    {rule.met ? (
+                                      <Check className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                                    ) : (
+                                      <X className="w-3 h-3 text-rose-500 flex-shrink-0" />
+                                    )}
+                                    <span className={rule.met ? 'text-slate-350 line-through decoration-slate-600/60' : 'text-slate-450'}>
+                                      {rule.label}
+                                    </span>
+                                  </div>
+                                </Tooltip>
                               ))}
                             </div>
                           </div>
@@ -877,7 +962,7 @@ export default function App() {
                 </div>
               ) : (
                 /* LOGIN CHASSIS */
-                <div className="space-y-8">
+                <div key="login-form" className="space-y-8 animate-fade-in">
                   <div className="text-center lg:text-left">
                     <h2 className="text-2xl font-bold text-white tracking-tight uppercase">Portal Anmeldung</h2>
                     <p className="text-sm text-slate-400 mt-1.5">Wählen Sie Ihren Kontotyp und tragen Sie Ihre Login-Daten ein.</p>
@@ -993,6 +1078,68 @@ export default function App() {
                   </form>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL SESSION TIMEOUT COUNTDOWN MODAL */}
+      {session && secondsRemaining <= 60 && secondsRemaining > 0 && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[99999] flex items-center justify-center p-4 animate-fade-in font-sans">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden text-center">
+            {/* Top red glow decoration strip */}
+            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-red-650 via-amber-500 to-red-650 animate-pulse" />
+            
+            <div className="mx-auto w-12 h-12 rounded-full bg-red-400/10 border border-red-500/20 text-red-400 flex items-center justify-center mb-4 animate-bounce">
+              <ShieldAlert className="h-6 w-6" />
+            </div>
+
+            <h3 className="text-base font-bold text-slate-100 uppercase tracking-wide">
+              Sitzung läuft ab!
+            </h3>
+            
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              Sie wurden aufgrund von Inaktivität in Kürze automatisch abgemeldet. Möchten Sie Ihre Sitzung verlängern?
+            </p>
+
+            {/* Countdown Clock Panel */}
+            <div className="my-5 p-4 bg-slate-950 rounded-xl border border-slate-850 flex flex-col justify-center items-center">
+              <div className="text-[10px] uppercase font-bold tracking-widest font-mono text-slate-500 mb-1">
+                Automatische Abmeldung in
+              </div>
+              <div className="text-3xl font-extrabold font-mono text-rose-500 tracking-tight drop-shadow-[0_0_12px_rgba(239,68,68,0.2)]">
+                {secondsRemaining}s
+              </div>
+              
+              {/* Visual dynamic progress bar */}
+              <div className="w-full bg-slate-900 h-1.5 rounded-full mt-3 overflow-hidden border border-slate-800">
+                <div 
+                  className="bg-gradient-to-r from-red-550 to-amber-500 h-full transition-all duration-1000"
+                  style={{ width: `${(secondsRemaining / 60) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof (window as any).extendSession === 'function') {
+                    (window as any).extendSession();
+                  }
+                }}
+                className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-blue-600/15 cursor-pointer transform hover:scale-[1.015] active:scale-[0.985] text-center flex items-center justify-center gap-2 border border-blue-500/25"
+              >
+                <span>Aktiv bleiben & Sitzung verlängern</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full py-2 px-4 bg-transparent hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl text-[11px] font-semibold transition-colors cursor-pointer"
+              >
+                Jetzt abmelden
+              </button>
             </div>
           </div>
         </div>

@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM Beratung – Vollständiges System- &amp; Benutzerhandbuch</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-muted: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --text-soft: #64748b;
+      --primary: #4f46e5;
+      --primary-dark: #3730a3;
+      --primary-soft: #eef2ff;
+      --emerald: #059669;
+      --emerald-soft: #ecfdf5;
+      --amber: #d97706;
+      --amber-soft: #fffbeb;
+      --rose: #e11d48;
+      --rose-soft: #fff1f2;
+      --sidebar-bg: #0f172a;
+      --sidebar-text: #cbd5e1;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --radius: 12px;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 6px 18px rgba(15, 23, 42, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+
+    /* Layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--sidebar-bg);
+      color: var(--sidebar-text);
+      padding: 24px 18px 36px;
+      border-right: 1px solid #1e293b;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .brand-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin-top: 2px;
+    }
+
+    .nav-search {
+      position: relative;
+    }
+
+    .nav-search input {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #f8fafc;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .nav-search input:focus {
+      border-color: #6366f1;
+    }
+
+    .nav-search input::placeholder {
+      color: #94a3b8;
+    }
+
+    .nav-group-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 700;
+      padding: 8px 10px 4px;
+    }
+
+    .nav-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .nav-list a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .nav-list a:hover {
+      background: #1e293b;
+      color: #fff;
+    }
+
+    .nav-list a.active {
+      background: #4f46e5;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .nav-num {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      opacity: 0.75;
+      min-width: 22px;
+    }
+
+    .sidebar-actions {
+      margin-top: auto;
+      padding-top: 16px;
+      border-top: 1px solid #1e293b;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-print {
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #f8fafc;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-print:hover {
+      background: #334155;
+    }
+
+    /* Main Content */
+    .main {
+      padding: 36px 48px 72px;
+      max-width: 1080px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* Hero Banner */
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: #fff;
+      border-radius: 16px;
+      padding: 36px 40px;
+      margin-bottom: 36px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-eyebrow {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #a5b4fc;
+      background: rgba(99, 102, 241, 0.16);
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-bottom: 14px;
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: 30px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .hero p {
+      margin: 0;
+      color: #cbd5e1;
+      max-width: 72ch;
+      font-size: 15px;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .hero-stat {
+      background: rgba(15, 23, 42, 0.45);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+
+    .hero-stat .k {
+      font-size: 11px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .hero-stat .v {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      margin-top: 2px;
+    }
+
+    /* Sections */
+    section.chapter {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 34px;
+      margin-bottom: 28px;
+      box-shadow: var(--shadow-sm);
+      scroll-margin-top: 24px;
+    }
+
+    .chapter-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .chapter-tag {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      background: var(--primary-soft);
+      border: 1px solid #c7d2fe;
+      padding: 3px 9px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    h2 {
+      margin: 6px 0 0;
+      font-size: 22px;
+      letter-spacing: -0.015em;
+      color: var(--text);
+    }
+
+    h3 {
+      margin: 24px 0 10px;
+      font-size: 16.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h4 {
+      margin: 16px 0 6px;
+      font-size: 14.5px;
+      color: var(--text);
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--text-muted);
+    }
+
+    ul, ol {
+      margin: 0 0 14px;
+      padding-left: 22px;
+      color: var(--text-muted);
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    li strong {
+      color: var(--text);
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      background: var(--surface-muted);
+      color: #1e293b;
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+    }
+
+    /* Code Blocks */
+    .code-wrap {
+      position: relative;
+      margin: 12px 0 18px;
+    }
+
+    pre {
+      margin: 0;
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px 18px;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      border: 1px solid #1e293b;
+    }
+
+    pre code {
+      background: transparent;
+      border: none;
+      color: inherit;
+      padding: 0;
+      font-size: inherit;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .copy-btn:hover {
+      background: #334155;
+    }
+
+    /* Callouts */
+    .callout {
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 14px;
+      border: 1px solid;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .callout.info {
+      background: var(--primary-soft);
+      border-color: #c7d2fe;
+      color: #1e1b4b;
+    }
+
+    .callout.warn {
+      background: var(--amber-soft);
+      border-color: #fde68a;
+      color: #78350f;
+    }
+
+    .callout.success {
+      background: var(--emerald-soft);
+      border-color: #a7f3d0;
+      color: #064e3b;
+    }
+
+    .callout.danger {
+      background: var(--rose-soft);
+      border-color: #fecdd3;
+      color: #881337;
+    }
+
+    /* Grids & Cards */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      gap: 14px;
+      margin: 14px 0 18px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin: 14px 0 18px;
+    }
+
+    .card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+
+    .card h4 {
+      margin: 0 0 6px;
+      font-size: 14.5px;
+      color: var(--text);
+    }
+
+    .card p {
+      margin: 0;
+      font-size: 13.5px;
+    }
+
+    /* Tables */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 14px 0 18px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      text-align: left;
+      background: var(--surface);
+    }
+
+    th {
+      background: var(--surface-muted);
+      color: var(--text);
+      font-weight: 700;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 5px;
+    }
+
+    .badge-get { background: #dbeafe; color: #1e40af; }
+    .badge-post { background: #dcfce7; color: #166534; }
+    .badge-sec { background: #ede9fe; color: #5b21b6; }
+
+    /* Step List */
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+      margin: 14px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .steps > li {
+      counter-increment: step;
+      position: relative;
+      padding: 16px 18px 16px 56px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin: 0;
+    }
+
+    .steps > li::before {
+      content: counter(step);
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--text-soft);
+      font-size: 13px;
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Responsive & Print */
+    @media (max-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: relative;
+        height: auto;
+      }
+      .main {
+        padding: 24px 18px 48px;
+      }
+      section.chapter {
+        padding: 22px 18px;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+      .sidebar, .copy-btn {
+        display: none !important;
+      }
+      .layout {
+        display: block;
+      }
+      .main {
+        max-width: 100%;
+        padding: 0;
+      }
+      section.chapter, .hero {
+        box-shadow: none;
+        break-inside: avoid-page;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-badge">C</div>
+        <div>
+          <div class="brand-title">CRM Beratung</div>
+          <div class="brand-sub">HANDBUCH &amp; INSTALL-GUIDE</div>
+        </div>
+      </div>
+
+      <div class="nav-search">
+        <input id="toc-filter" type="search" placeholder="Kapitel filtern..." aria-label="Kapitel filtern" />
+      </div>
+
+      <nav aria-label="Inhaltsverzeichnis">
+        <div class="nav-group-label">Grundlagen &amp; Setup</div>
+        <ul class="nav-list">
+          <li><a href="#kap-1"><span class="nav-num">01</span> Systemübersicht &amp; Architektur</a></li>
+          <li><a href="#kap-2"><span class="nav-num">02</span> Installationsanleitung</a></li>
+          <li><a href="#kap-3"><span class="nav-num">03</span> Anmeldung, Rollen &amp; Sicherheit</a></li>
+        </ul>
+
+        <div class="nav-group-label">Administrator-Leitstand</div>
+        <ul class="nav-list">
+          <li><a href="#kap-4"><span class="nav-num">04</span> Dashboard &amp; Kennzahlen</a></li>
+          <li><a href="#kap-5"><span class="nav-num">05</span> Benutzer-Aktionen &amp; Audit-Log</a></li>
+          <li><a href="#kap-6"><span class="nav-num">06</span> Kundenverwaltung &amp; Exporte</a></li>
+          <li><a href="#kap-7"><span class="nav-num">07</span> Projekte, Roadmap &amp; Übergabe</a></li>
+          <li><a href="#kap-8"><span class="nav-num">08</span> Warenwirtschaft (WWS)</a></li>
+          <li><a href="#kap-9"><span class="nav-num">09</span> Dokumente, DMs &amp; Termine</a></li>
+          <li><a href="#kap-10"><span class="nav-num">10</span> Finanzen, Rechnungen &amp; KI-Bot</a></li>
+        </ul>
+
+        <div class="nav-group-label">Mandanten &amp; Technik</div>
+        <ul class="nav-list">
+          <li><a href="#kap-11"><span class="nav-num">11</span> Mandantenportal im Detail</a></li>
+          <li><a href="#kap-12"><span class="nav-num">12</span> SQLite-Datenbank &amp; Backups</a></li>
+          <li><a href="#kap-13"><span class="nav-num">13</span> API-Referenz &amp; Troubleshooting</a></li>
+        </ul>
+      </nav>
+
+      <div class="sidebar-actions">
+        <button type="button" class="btn-print" onclick="window.print()">🖨️ Als PDF drucken / speichern</button>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main">
+      <!-- HERO -->
+      <header class="hero">
+        <span class="hero-eyebrow">Offizielles System- &amp; Benutzerhandbuch</span>
+        <h1>CRM Beratung – Vollständiges Handbuch &amp; Installationsanleitung</h1>
+        <p>
+          Gesamtdokumentation für Installation, Betrieb, Administration, Mandantenportal,
+          SQLite-Persistenz (<code>/data/crm.db</code>), chronologisches Audit-Logging,
+          Warenwirtschaft (WWS), Rechnungslegung und kryptografische Datensicherung.
+        </p>
+        <div class="hero-meta">
+          <div class="hero-stat">
+            <div class="k">Datenbank</div>
+            <div class="v">SQLite (node:sqlite)</div>
+          </div>
+          <div class="hero-stat">
+            <div class="k">Server-Port</div>
+            <div class="v">3000 (Express + Vite)</div>
+          </div>
+          <div class="hero-stat">
+            <div class="k">Frontend</div>
+            <div class="v">React 19 + Tailwind v4</div>
+          </div>
+          <div class="hero-stat">
+            <div class="k">Anforderung</div>
+            <div class="v">Node.js ≥ 22.5 LTS</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- KAPITEL 1 -->
+      <section class="chapter" id="kap-1">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 01</span>
+            <h2>Systemübersicht &amp; Technische Architektur</h2>
+          </div>
+        </div>
+        <p>
+          <strong>CRM Beratung</strong> ist eine lokal betreibbare, offline-fähige Komplettlösung für Beratungsunternehmen,
+          Kanzleien und Agenturen. Sie trennt strikt zwischen dem <strong>Administrator-Leitstand</strong> (11 Arbeitsbereiche)
+          und dem <strong>Mandantenportal</strong> (9 kundenbezogene Ansichten) und speichert sämtliche Daten transaktional
+          auf dem eigenen Server in einer relationalen SQLite-Datenbank.
+        </p>
+
+        <div class="grid-3">
+          <div class="card">
+            <h4>🖥️ Frontend-Schicht</h4>
+            <p>React 19 Single-Page-Application (TypeScript) mit Tailwind CSS v4, Recharts-Diagrammen und Lucide-Icons.</p>
+          </div>
+          <div class="card">
+            <h4>⚙️ Backend-Schicht</h4>
+            <p>Express-Server (<code>server.ts</code>) auf Port <code>3000</code> mit JSON-REST-APIs (50 MB Payload-Limit für Dokumente).</p>
+          </div>
+          <div class="card">
+            <h4>🗄️ Persistenz-Schicht</h4>
+            <p>Native Node.js SQLite-Datenbank (<code>node:sqlite</code>) im WAL-Modus unter <code>/data/crm.db</code> plus Browser-Offline-Cache.</p>
+          </div>
+        </div>
+
+        <h3>Projektstruktur</h3>
+        <div class="code-wrap">
+          <pre><code>├── server.ts                  # Express-Server, API-Endpunkte &amp; Vite-Middleware
+├── server/
+│   └── sqliteDb.ts            # SQLite-Schema (15 Tabellen), Migration, Export/Import
+├── data/
+│   └── crm.db                 # Produktive SQLite-Datenbank (wird beim Start erzeugt)
+├── src/
+│   ├── App.tsx                # Authentifizierung, Session, Inaktivitäts-Wächter, Dual-Sync
+│   ├── storage.ts             # LocalStorage-Cache, SHA-256 Hashing, SQLite API-Client
+│   ├── csvUtils.ts            # CSV-Export &amp; -Parser für Kundendaten
+│   ├── mockData.ts            # Erstbefüllung (Admin-Profil, Demo-Mandanten, Vorlagen)
+│   ├── types.ts               # Zentrale TypeScript-Datenmodelle
+│   └── components/
+│       ├── Sidebar.tsx        # Rollenbasierte Navigation &amp; SQLite-Sync-Statusleiste
+│       ├── AdminCRM.tsx       # Alle 11 Admin-Module inkl. Benutzer-Aktionen &amp; WWS
+│       ├── CustomerPortal.tsx # Alle 9 Mandanten-Module inkl. DGM-Signatur &amp; Bot
+│       └── ManualDoc.tsx      # In-App Kurzhandbuch
+├── README.md                  # Schnelleinstieg &amp; Installationsanleitung (Markdown)
+└── HANDBUCH.html              # Dieses vollständige HTML-Handbuch</code></pre>
+        </div>
+      </section>
+
+      <!-- KAPITEL 2 -->
+      <section class="chapter" id="kap-2">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 02</span>
+            <h2>Schritt-für-Schritt-Installationsanleitung</h2>
+          </div>
+        </div>
+
+        <div class="callout warn">
+          <span class="callout-title">⚠️ Wichtige Voraussetzung: Node.js ≥ 22.5.0</span>
+          Dieses System nutzt das in Node.js eingebaute Modul <code>node:sqlite</code> (<code>DatabaseSync</code>).
+          Installieren Sie daher zwingend <strong>Node.js Version 22 LTS</strong> (oder neuer). Ältere Versionen wie Node 18 oder 20 starten den Server nicht.
+        </div>
+
+        <h3>Systemvoraussetzungen</h3>
+        <ul>
+          <li><strong>Node.js:</strong> Version <code>22.5.0</code> oder höher (empfohlen: <code>v22.x LTS</code>)</li>
+          <li><strong>Paketmanager:</strong> <code>npm</code> (im Lieferumfang von Node.js enthalten)</li>
+          <li><strong>Freier Netzwerkport:</strong> TCP-Port <code>3000</code></li>
+          <li><strong>Schreibrechte:</strong> Schreibzugriff im Projektordner für das Unterverzeichnis <code>./data</code></li>
+        </ul>
+
+        <h3>Installation &amp; Start (Entwicklung &amp; Test)</h3>
+        <ol class="steps">
+          <li>
+            <strong>Node.js-Version überprüfen</strong>
+            <p>Öffnen Sie ein Terminal und verifizieren Sie die installierte Node-Version:</p>
+            <div class="code-wrap">
+              <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+              <pre><code>node -v
+npm -v</code></pre>
+            </div>
+          </li>
+          <li>
+            <strong>Projektverzeichnis vorbereiten</strong>
+            <p>Klonen Sie das Repository oder entpacken Sie das Archiv und wechseln Sie in das Verzeichnis:</p>
+            <div class="code-wrap">
+              <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+              <pre><code>git clone &lt;REPOSITORY-URL&gt; crm-beratung
+cd crm-beratung</code></pre>
+            </div>
+          </li>
+          <li>
+            <strong>Abhängigkeiten installieren</strong>
+            <p>Installieren Sie alle Frontend- und Backend-Pakete über npm:</p>
+            <div class="code-wrap">
+              <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+              <pre><code>npm install</code></pre>
+            </div>
+          </li>
+          <li>
+            <strong>Umgebungsvariablen einrichten (optional)</strong>
+            <p>Erstellen Sie bei Bedarf eine <code>.env</code>-Datei aus der Vorlage. Für den Standard-CRM-Betrieb mit SQLite sind keine externen Keys nötig:</p>
+            <div class="code-wrap">
+              <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+              <pre><code>cp .env.example .env</code></pre>
+            </div>
+          </li>
+          <li>
+            <strong>Entwicklungsserver starten</strong>
+            <p>Startet Express + Vite auf Port <code>3000</code> und initialisiert automatisch <code>./data/crm.db</code>:</p>
+            <div class="code-wrap">
+              <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+              <pre><code>npm run dev</code></pre>
+            </div>
+            <p>Öffnen Sie anschließend <code>http://localhost:3000</code> im Browser. Dieses HTML-Handbuch ist zusätzlich unter <code>http://localhost:3000/handbuch.html</code> abrufbar.</p>
+          </li>
+        </ol>
+
+        <h3>Produktions-Deployment (Live-Betrieb)</h3>
+        <p>Für den stabilen Produktivbetrieb werden Frontend und Backend in das Verzeichnis <code>dist/</code> kompiliert:</p>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+          <pre><code># 1. TypeScript prüfen
+npm run lint
+
+# 2. Frontend &amp; Server-Bundle bauen
+npm run build
+
+# 3. Produktiv-Server starten
+NODE_ENV=production npm start</code></pre>
+        </div>
+
+        <h4>Dauerbetrieb mit PM2 &amp; Reverse Proxy (Empfehlung)</h4>
+        <div class="code-wrap">
+          <button class="copy-btn" type="button" onclick="copyCode(this)">Kopieren</button>
+          <pre><code>npm install -g pm2
+NODE_ENV=production pm2 start dist/server.cjs --name crm-beratung
+pm2 startup
+pm2 save</code></pre>
+        </div>
+        <p>
+          Betreiben Sie das Portal hinter einem Reverse Proxy (z. B. <strong>Nginx</strong> oder <strong>Caddy</strong>) mit HTTPS/TLS
+          und leiten Sie den Traffic auf <code>http://127.0.0.1:3000</code> weiter. Sichern Sie den Ordner <code>./data/</code> regelmäßig in Ihre Server-Backups.
+        </p>
+      </section>
+
+      <!-- KAPITEL 3 -->
+      <section class="chapter" id="kap-3">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 03</span>
+            <h2>Anmeldung, Rollenmodell &amp; Sicherheitsarchitektur</h2>
+          </div>
+        </div>
+
+        <h3>Standard-Zugangsdaten bei Ersteinrichtung</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rolle</th>
+                <th>Login-Reiter</th>
+                <th>Benutzername</th>
+                <th>Passwort</th>
+                <th>Hinweis</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Administrator</strong></td>
+                <td>Admin (CRM-Leitung)</td>
+                <td><code>admin</code></td>
+                <td><code>admin123</code></td>
+                <td>Unbedingt direkt nach Erstanmeldung ändern!</td>
+              </tr>
+              <tr>
+                <td><strong>Mandant (Stammkunde)</strong></td>
+                <td>Mandant (Kundenportal)</td>
+                <td><code>max.muster</code></td>
+                <td><code>kunde123</code></td>
+                <td>Max Mustermann (Muster GmbH)</td>
+              </tr>
+              <tr>
+                <td><strong>Mandant (Neukunde)</strong></td>
+                <td>Mandant (Kundenportal)</td>
+                <td><code>anna.schmidt</code></td>
+                <td><code>kunde123</code></td>
+                <td>Anna Schmidt (Schmidt AG)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Selbstregistrierung &amp; Passwort-Generator</h3>
+        <p>
+          Unter dem Reiter <strong>Mandant (Kundenportal)</strong> führt der Link <em>„Noch kein Mandantenkonto? Jetzt registrieren“</em>
+          zum Registrierungsformular. Dieses bietet:
+        </p>
+        <ul>
+          <li><strong>Echtzeit-Passwort-Checkliste:</strong> Prüft Mindestlänge (8 Zeichen), Groß-/Kleinbuchstaben, Ziffern und Sonderzeichen.</li>
+          <li><strong>Integrierter Passwort-Generator:</strong> Erzeugt mit einem Klick ein 15-stelliges Zufallspasswort (Sonderzeichen individuell abwählbar).</li>
+          <li><strong>Admin-Freigabepflicht:</strong> Jedes neu registrierte Konto wird mit <code>approved: false</code> angelegt und kann sich erst einloggen, nachdem der Administrator es in der Kundenverwaltung freigeschaltet hat.</li>
+        </ul>
+
+        <h3>Eingebaute Schutzmechanismen</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>🔒 Brute-Force-Sperre</h4>
+            <p>Nach <strong>5 fehlerhaften Anmeldeversuchen</strong> wird das Login-Formular automatisch für <strong>30 Sekunden</strong> gesperrt. Jeder Fehlversuch und jede Sperre wird im Audit-Log protokolliert.</p>
+          </div>
+          <div class="card">
+            <h4>⏱️ Inaktivitäts-Wächter (15 Minuten)</h4>
+            <p>Erfolgt 15 Minuten lang keine Maus- oder Tastaturaktivität, meldet sich das Portal automatisch ab. <strong>60 Sekunden vor Ablauf</strong> erscheint ein Countdown-Dialog zur 1-Klick-Verlängerung.</p>
+          </div>
+          <div class="card">
+            <h4>🔏 SHA-256 Passwort-Hashing</h4>
+            <p>Passwörter werden clientseitig via SHA-256 gehasht (inkl. reinem JS-Fallback für lokale HTTP-Umgebungen), bevor sie gespeichert oder abgeglichen werden.</p>
+          </div>
+          <div class="card">
+            <h4>🎹 Globale Tastaturkürzel</h4>
+            <p><code>Strg + D</code> / <code>Cmd + D</code> wechselt direkt zum Dashboard. <code>Strg + K</code> / <code>Cmd + K</code> springt direkt in die Kunden- bzw. Produktsuche.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- KAPITEL 4 -->
+      <section class="chapter" id="kap-4">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 04</span>
+            <h2>Admin: Management Dashboard &amp; Kennzahlen</h2>
+          </div>
+        </div>
+        <p>
+          Das Management Dashboard bildet die zentrale Kommandozentrale der Kanzlei- oder Unternehmensleitung.
+          Über die obere Tab-Leiste lässt sich direkt zwischen <strong>Übersicht</strong> und <strong>Benutzer-Aktionen</strong> umschalten.
+        </p>
+
+        <h3>Infokarten &amp; Analysen auf dem Dashboard</h3>
+        <ul>
+          <li><strong>Mandanten- &amp; Neuanmeldungs-Übersicht:</strong> Zeigt aktive Kunden, neu registrierte bzw. freizuschaltende Mandanten („Neuanmeldungen“) sowie Umsatz- und Projektkennzahlen.</li>
+          <li><strong>Dokumenten-Speicherverbrauch:</strong> Visualisiert die Gesamtgröße und Anzahl aller in der Dokumenten-Zentrale abgelegten Verträge, PDFs und Mediendateien.</li>
+          <li><strong>24h-Login-Sicherheitsmonitor:</strong> Flächendiagramm (Recharts) über fehlgeschlagene Login-Versuche der letzten 24 Stunden mit automatischer Bedrohungsstufe (Sicher / Warnung / Kritisch) sowie einem Simulator (<em>„Fehler simulieren“</em>) zum Testen der Alarmierung.</li>
+          <li><strong>Online/Offline-Sync-Steuerung:</strong> Erlaubt das bewusste Pausieren oder Reaktivieren der Server-Synchronisation.</li>
+          <li><strong>Integritätsprüfung:</strong> Validiert per Klick alle relationalen Verknüpfungen zwischen Kunden, Dateien, Rechnungen, Terminen und Nachrichten.</li>
+          <li><strong>SQLite-Datenbankverwaltung:</strong> Direkter Zugriff auf Tabellenstatistiken, manuelles Speichern/Neuladen sowie Export (<code>.db</code> / <code>.json</code> / E2EE-Backup) und Import.</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 5 -->
+      <section class="chapter" id="kap-5">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 05</span>
+            <h2>Admin: Benutzer-Aktionen &amp; Chronologisches Audit-Log</h2>
+          </div>
+        </div>
+        <p>
+          Der dedizierte Navigationspunkt <strong>Benutzer-Aktionen</strong> (sowie der Reiter im Dashboard-Kopf) liefert eine
+          lückenlose, chronologische Übersicht aller im System protokollierten Vorgänge auf Basis der <code>AuditLogs</code>.
+        </p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h4>📊 4 KPI-Zusammenfassungskarten</h4>
+            <p>Zeigen auf einen Blick: <strong>Protokollierte Aktionen</strong> (inkl. aktiver Initiatoren), <strong>Erfolgreiche Aktionen</strong>, <strong>Hinweise &amp; Warnungen</strong> sowie <strong>Fehler &amp; Sperren</strong>.</p>
+          </div>
+          <div class="card">
+            <h4>🕒 Zwei Ansichtsmodi</h4>
+            <p>Wechseln Sie jederzeit zwischen der nach Kalendertagen (<em>Heute</em>, <em>Gestern</em>, Datum) gruppierten <strong>Chronologischen Zeitleiste</strong> und der kompakten <strong>Tabellenansicht</strong>.</p>
+          </div>
+        </div>
+
+        <h3>Filter-, Sortier- &amp; Exportfunktionen</h3>
+        <ul>
+          <li><strong>Status-Filter:</strong> Segmentierte Schnellauswahl für <em>Alle</em>, <em>Erfolg</em>, <em>Info</em>, <em>Warnung</em> und <em>Fehler</em>.</li>
+          <li><strong>Benutzer-/Initiator-Filter:</strong> Dropdown über alle im Log vorkommenden Benutzerkonten (z. B. <code>admin</code>, <code>max.muster</code>).</li>
+          <li><strong>Volltextsuche:</strong> Durchsucht Aktionstitel, Auslöser, Detailbeschreibung und IP-Adresse.</li>
+          <li><strong>Chronologische Reihenfolge:</strong> Umschaltbar zwischen <em>Neueste zuerst</em> und <em>Älteste zuerst</em>.</li>
+          <li><strong>Export &amp; Bereinigung:</strong> <em>„Log exportieren (CSV)“</em> lädt die Audit-Historie zur Archivierung herunter; <em>„Protokoll leeren“</em> setzt die Log-Liste nach Rückfrage zurück.</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 6 -->
+      <section class="chapter" id="kap-6">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 06</span>
+            <h2>Admin: Kundenverwaltung, Filter &amp; CSV/JSON-Sicherung</h2>
+          </div>
+        </div>
+        <p>
+          In der <strong>Kundenverwaltung</strong> pflegen Sie sämtliche Stammdaten, Zugangsdaten und Berechtigungen Ihrer Mandanten.
+        </p>
+        <ul>
+          <li><strong>Mandanten anlegen &amp; bearbeiten:</strong> Erfassen von Name, Unternehmen, E-Mail, Telefon, Adresse, Status (<em>Neukunde</em>, <em>Aktiv</em>, <em>Stammkunde</em>, <em>Inaktiv</em>), individuellen Notizen, CRM-Titel und Landingpage-URL.</li>
+          <li><strong>Freischaltungs-Workflow:</strong> Neu selbstregistrierte Mandanten erscheinen prominent mit Freischalten-Aktion. Erst nach Freigabe ist ein Login möglich.</li>
+          <li><strong>Filterung &amp; Sortierung:</strong> Kombinierbare Filter nach <strong>Status</strong> (z. B. <em>Neukunde</em>, <em>Aktiv</em>) sowie <strong>Sortierung nach Registrierungsdatum</strong> (neueste/älteste zuerst) oder Name.</li>
+          <li><strong>Passwort zurücksetzen:</strong> Administratoren können direkt im Bearbeitungsdialog ein neues Passwort vergeben.</li>
+          <li><strong>Lokale Sicherung &amp; Import:</strong> Mit den Buttons <strong>CSV Export</strong> und <strong>JSON Export</strong> laden Sie die vollständige Kundenliste zur lokalen Sicherung herunter. Über <strong>CSV Import</strong> / <strong>JSON Import</strong> lassen sich Kundenlisten wieder einspielen (bestehende IDs werden aktualisiert, neue ergänzt).</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 7 -->
+      <section class="chapter" id="kap-7">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 07</span>
+            <h2>Admin: Kunden-Projekte, Fahrplan-Schablonen &amp; Übergabeprotokoll</h2>
+          </div>
+        </div>
+        <p>
+          Das Modul <strong>Kunden-Projekte</strong> steuert den Beratungs- und Umsetzungsfortschritt jedes einzelnen Mandanten.
+        </p>
+        <ul>
+          <li><strong>5-Phasen-Fahrplan (Roadmap):</strong> Jeder Mandant durchläuft bis zu 5 definierte Phasen mit einzelnen To-dos (Verantwortlichkeit: <em>Admin</em>, <em>Kunde</em> oder <em>Beide</em>). Nur der Administrator hakt erledigte Aufgaben ab und schaltet die nächste Phase frei.</li>
+          <li><strong>Roadmap pro Kunde aktivieren/deaktivieren:</strong> Lässt sich für jeden Mandanten einzeln ein- oder ausschalten.</li>
+          <li><strong>Schablonen-Builder (Roadmap-Templates):</strong> Erstellen und bearbeiten Sie wiederverwendbare Branchen- oder Beratungs-Vorlagen (inkl. Phasen und Aufgaben) und weisen Sie diese neuen oder bestehenden Mandanten per Klick zu.</li>
+          <li><strong>Onboarding &amp; Übergabeprotokoll:</strong> Einsehen der vom Kunden ausgefüllten Unternehmensdaten (Branche, Zielgruppe, Produkte, Sonderwünsche) sowie Dokumentation des technischen Rollouts (Landingpage aktiv, CRM aktiv, Benutzer-DB aktiv, Zugangsdaten, Kundenbestätigung).</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 8 -->
+      <section class="chapter" id="kap-8">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 08</span>
+            <h2>Admin: Warenwirtschaftssystem (WWS)</h2>
+          </div>
+        </div>
+        <p>
+          Das integrierte <strong>Warenwirtschaftssystem (WWS)</strong> verwaltet Produkte, Lagerbestände, Bewegungen und Lieferantenbestellungen direkt im CRM:
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h4>📦 Artikelstamm &amp; Mindestbestände</h4>
+            <p>Verwaltung von Artikelnummer (SKU), Kategorie, Lagerort, aktuellem Bestand, Mindestbestand (automatische Warnung bei Unterschreitung), Einkaufs- und Verkaufspreis.</p>
+          </div>
+          <div class="card">
+            <h4>🔄 Lagerbewegungen &amp; Lieferanten</h4>
+            <p>Nachvollziehbare Ein- und Ausbuchungen (Wareneingang, Warenausgang, Korrektur) mit Begründung und Bearbeiter sowie Lieferantenverwaltung inkl. Bestellstatus (Entwurf, Bestellt, Geliefert).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- KAPITEL 9 -->
+      <section class="chapter" id="kap-9">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 09</span>
+            <h2>Admin: Dokumenten-Zentrale, Direktnachrichten (DMs) &amp; Termine</h2>
+          </div>
+        </div>
+
+        <h3>Dokumenten-Zentrale &amp; DGM-Signaturprüfung</h3>
+        <ul>
+          <li>Kategorisierte Ablage nach <em>Vertrag</em>, <em>Video</em>, <em>Dokument</em> und <em>Marketing</em> mit Mandantenzuordnung.</li>
+          <li>Statusworkflow pro Datei: <em>Ausstehend</em>, <em>Geprüft</em>, <em>Signiert</em>.</li>
+          <li><strong>Revisionssichere Signaturansicht:</strong> Bei digital signierten Dokumenten (DGM) wird die erfasste Unterschrift zusammen mit dem <strong>HMAC-SHA256-Hash</strong> und dem Zeitstempel angezeigt.</li>
+        </ul>
+
+        <h3>Direktnachrichten (DMs) &amp; E2EE</h3>
+        <ul>
+          <li>Echtzeit-Synchronisation aller Chats mit den Mandanten inkl. Zähler ungelesener Nachrichten in der Sidebar.</li>
+          <li>Unterstützung für Dateianhänge sowie optionale symmetrische Ende-zu-Ende-Verschlüsselung.</li>
+        </ul>
+
+        <h3>Termine &amp; Planung</h3>
+        <ul>
+          <li>Erstellen und Verwalten von Beratungs- und Projektsitzungen (Titel, Datum, Uhrzeit, Beschreibung, zugeordneter Mandant, Status <em>Geplant</em> / <em>Abgeschlossen</em> / <em>Abgesagt</em>).</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 10 -->
+      <section class="chapter" id="kap-10">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 10</span>
+            <h2>Admin: Finanzen, Rechnungen &amp; KI-Bot Training</h2>
+          </div>
+        </div>
+
+        <h3>Finanzen &amp; Rechnungen</h3>
+        <ul>
+          <li><strong>Rechnungsgenerator:</strong> Anlegen von Rechnungen mit Rechnungsnummer, Fälligkeitsdatum, mehreren Einzelpositionen und Beschreibung.</li>
+          <li><strong>Steuerlogik:</strong> Unterstützt reguläre <strong>19 % USt.</strong> sowie steuerfreie Vermittlungen (<strong>0 % gemäß § 4 Nr. 11 UStG</strong>) mit automatischer Berechnung von Netto, Steuerbetrag und Brutto.</li>
+          <li><strong>Zahlungsstatus &amp; Steuerbüro-Export:</strong> Verfolgen von <em>Bezahlt</em>, <em>Offen</em> und <em>Überfällig</em> sowie 1-Klick-Export als steuerberaterkonforme CSV-Datei.</li>
+        </ul>
+
+        <h3>KI-Bot Training (Lokale NLP-Engine)</h3>
+        <ul>
+          <li>Arbeitet vollständig lokal ohne externe Cloud-API-Kosten auf Basis von Keyword-Triggern.</li>
+          <li><strong>Regeln pflegen:</strong> Kommagetrennte Schlüsselwörter definieren und eine passende Antwort hinterlegen (inkl. Verwendungszähler).</li>
+          <li><strong>Unresolved Queries:</strong> Erkennt der Bot eine Kundenfrage nicht, landet diese automatisch in der Liste der offenen Rückfragen. Der Administrator kann daraus direkt eine neue Bot-Regel anlernen.</li>
+        </ul>
+      </section>
+
+      <!-- KAPITEL 11 -->
+      <section class="chapter" id="kap-11">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 11</span>
+            <h2>Das Mandantenportal im Detail</h2>
+          </div>
+        </div>
+        <p>Nach der Anmeldung im Kundenportal stehen dem Mandanten neun übersichtliche Bereiche zur Verfügung:</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Bereich</th>
+                <th>Funktionen für den Mandanten</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Kunden-Dashboard</strong></td>
+                <td>Begrüßung, aktiver Projektfahrplan (5 Phasen) mit klickbaren Aufgaben-Absprungmarken, Statuszusammenfassung und aktuelle Hinweise.</td>
+              </tr>
+              <tr>
+                <td><strong>Warenbestand (WWS)</strong></td>
+                <td>Einsicht in den freigegebenen Artikelkatalog inkl. Suchfunktion (auch per <code>Strg + K</code>), Kategorien und Bestandsinformationen.</td>
+              </tr>
+              <tr>
+                <td><strong>Vertragsübersicht</strong></td>
+                <td>Einsicht in bereitgestellte Verträge &amp; Vollmachten sowie direktes grafisches Signieren per Maus/Touch (DGM mit kryptografischem Hash).</td>
+              </tr>
+              <tr>
+                <td><strong>Dokumente &amp; Uploads</strong></td>
+                <td>Hochladen von PDFs, Ausweisen, Bildern oder Videomaterial sowie Herunterladen freigegebener Unterlagen.</td>
+              </tr>
+              <tr>
+                <td><strong>DMs (Direktnachrichten)</strong></td>
+                <td>Geschützter Chat mit dem Berater sowie Soforthilfe durch den trainierten KI-Support-Assistenten.</td>
+              </tr>
+              <tr>
+                <td><strong>Termine &amp; Planung</strong></td>
+                <td>Übersicht geplanter Beratungstermine und Projekt-Meilensteine.</td>
+              </tr>
+              <tr>
+                <td><strong>Meine Rechnungen</strong></td>
+                <td>Rechnungen im professionellen DIN-Layout ansehen, herunterladen und den Zahlungsstatus verfolgen.</td>
+              </tr>
+              <tr>
+                <td><strong>Profil &amp; Stammdaten</strong></td>
+                <td>Eigene Kontaktdaten sowie das strukturierte Unternehmens-Onboarding-Profil (Branche, Produkte, Zielgruppe, Logo) pflegen.</td>
+              </tr>
+              <tr>
+                <td><strong>Hilfe &amp; Handbuch</strong></td>
+                <td>Integriertes Kurzhandbuch mit FAQ und Direktzugriff auf diese vollständige HTML-Dokumentation.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- KAPITEL 12 -->
+      <section class="chapter" id="kap-12">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 12</span>
+            <h2>SQLite-Datenbank, Synchronisation &amp; Datensicherung</h2>
+          </div>
+        </div>
+        <p>
+          Alle CRM-Daten werden serverseitig in einer echten relationalen SQLite-Datenbank unter <code>/data/crm.db</code> gespeichert.
+          Die Datenbank arbeitet im performanten <strong>WAL-Modus (Write-Ahead Logging)</strong> und wird beim Start automatisch initialisiert.
+        </p>
+
+        <h3>Tabellenstruktur in <code>/data/crm.db</code> (15 Tabellen)</h3>
+        <div class="grid-3">
+          <div class="card">
+            <h4>System &amp; Konten</h4>
+            <p><code>app_state</code>, <code>admin_profile</code>, <code>customers</code>, <code>audit_logs</code></p>
+          </div>
+          <div class="card">
+            <h4>Projekte &amp; Kommunikation</h4>
+            <p><code>files</code>, <code>messages</code>, <code>appointments</code>, <code>custom_templates</code></p>
+          </div>
+          <div class="card">
+            <h4>Finanzen, WWS &amp; Bot</h4>
+            <p><code>invoices</code>, <code>inventory_products</code>, <code>suppliers</code>, <code>stock_movements</code>, <code>supplier_orders</code>, <code>bot_rules</code>, <code>unresolved_queries</code></p>
+          </div>
+        </div>
+
+        <h3>Vier Wege der Datensicherung &amp; Wiederherstellung</h3>
+        <ol>
+          <li><strong>SQLite-Datenbankdatei (<code>.db</code>) herunterladen &amp; einspielen:</strong> Über das SQLite-Panel im Admin-Dashboard wird die komplette Datei <code>crm_datenbank_YYYY-MM-DD.db</code> exportiert bzw. per Upload wiederhergestellt.</li>
+          <li><strong>SQLite-Stand als JSON herunterladen:</strong> Exportiert den Live-Bestand aus <code>/data/crm.db</code> direkt als formatierte Datei <code>crm_sqlite_backup_YYYY-MM-DD.json</code>.</li>
+          <li><strong>E2EE-verschlüsseltes JSON-Backup:</strong> Verschlüsselt die Daten vor dem Download mit einer selbst gewählten Passphrase (SHA-256 Stream-Cipher) zur sicheren externen Ablage.</li>
+          <li><strong>Dateisystem-Backup auf dem Server:</strong> Stoppen Sie bei Bedarf den Server kurz oder sichern Sie die SQLite-Datei konsistent auf Serverebene (inkl. <code>crm.db-wal</code> / <code>crm.db-shm</code>, falls vorhanden).</li>
+        </ol>
+
+        <div class="callout info">
+          <span class="callout-title">ℹ️ Automatische Migration von <code>crm_data.json</code></span>
+          Erkennt der Server beim ersten Start eine vorhandene Legacy-Datei <code>./data/crm_data.json</code>, übernimmt er deren Inhalte automatisch in die neuen SQLite-Tabellen, bevor der reguläre Betrieb startet.
+        </div>
+      </section>
+
+      <!-- KAPITEL 13 -->
+      <section class="chapter" id="kap-13">
+        <div class="chapter-header">
+          <div>
+            <span class="chapter-tag">Kapitel 13</span>
+            <h2>REST-API-Referenz &amp; Fehlerbehebung</h2>
+          </div>
+        </div>
+
+        <h3>Server-Endpunkte (Port 3000)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Methode</th>
+                <th>Endpunkt</th>
+                <th>Beschreibung</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-get">GET</span></td>
+                <td><code>/api/crm-data</code></td>
+                <td>Liefert das gesamte <code>CRMData</code>-Objekt aus SQLite</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-post">POST</span></td>
+                <td><code>/api/crm-data</code></td>
+                <td>Schreibt den gesamten <code>CRMData</code>-Zustand transaktional in SQLite und liefert aktuelle Statistiken zurück</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-get">GET</span></td>
+                <td><code>/api/sqlite/status</code></td>
+                <td>Gibt Dateigröße, Pfad, Journal-Modus, Zeitstempel und Datensatzzahlen je Tabelle zurück</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-get">GET</span></td>
+                <td><code>/api/sqlite/download</code></td>
+                <td>Sendet die vollständige binäre SQLite-Datei als Download (<code>.db</code>)</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-get">GET</span></td>
+                <td><code>/api/sqlite/export-json</code></td>
+                <td>Exportiert den aktuellen SQLite-Datenstand als formatierte JSON-Datei</td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-post">POST</span></td>
+                <td><code>/api/sqlite/import-db</code></td>
+                <td>Validiert und importiert eine Base64-kodierte <code>.db</code>-Datei in <code>/data/crm.db</code></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-sec">GET/POST</span></td>
+                <td><code>/api/sqlite/settings/:key</code></td>
+                <td>Liest oder speichert Konfigurationswerte in der Tabelle <code>app_state</code></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-get">GET</span></td>
+                <td><code>/handbuch.html</code></td>
+                <td>Stellt dieses vollständige HTML-Handbuch direkt über den Webserver bereit</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Häufige Fragen &amp; Troubleshooting</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Problem</th>
+                <th>Mögliche Ursache</th>
+                <th>Lösung</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Server startet nicht (<code>Cannot find module 'node:sqlite'</code>)</strong></td>
+                <td>Installierte Node.js-Version ist älter als v22.5.0.</td>
+                <td>Aktualisieren Sie auf <strong>Node.js 22 LTS</strong> (z. B. via <code>nvm install 22 &amp;&amp; nvm use 22</code>) und starten Sie erneut.</td>
+              </tr>
+              <tr>
+                <td><strong>Sidebar zeigt <code>Sync-Fehler</code></strong></td>
+                <td>Backend nicht erreichbar, Offline-Modus aktiv oder Schreibrechte auf <code>./data</code> fehlen.</td>
+                <td>Prüfen Sie den Server-Prozess, den Online-Schalter im Dashboard sowie die Dateiberechtigungen von <code>./data/crm.db</code>.</td>
+              </tr>
+              <tr>
+                <td><strong>Neu registrierter Kunde kann sich nicht anmelden</strong></td>
+                <td>Konto wartet noch auf administrative Freigabe.</td>
+                <td>Melden Sie sich als Admin an und schalten Sie den Mandanten in der <strong>Kundenverwaltung</strong> frei.</td>
+              </tr>
+              <tr>
+                <td><strong>Anmeldung nach 5 Fehlversuchen blockiert</strong></td>
+                <td>Automatischer Brute-Force-Schutz hat ausgelöst.</td>
+                <td>Warten Sie den 30-Sekunden-Countdown ab; anschließend ist das Eingabefeld automatisch wieder entsperrt.</td>
+              </tr>
+              <tr>
+                <td><strong>Offline-Nutzung im iFrame eingeschränkt</strong></td>
+                <td>Strikte Browser-Cookie-/Storage-Richtlinien in eingebetteten Frames.</td>
+                <td>Öffnen Sie die Anwendung direkt in einem eigenen Browser-Tab unter <code>http://localhost:3000</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <strong>CRM Beratung</strong> · Technisches System- &amp; Benutzerhandbuch · Persistenz via SQLite (<code>/data/crm.db</code>)
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    function copyCode(btn) {
+      const pre = btn.parentElement.querySelector('pre');
+      if (!pre) return;
+      const text = pre.innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        const prev = btn.textContent;
+        btn.textContent = 'Kopiert ✓';
+        setTimeout(() => { btn.textContent = prev; }, 1600);
+      }).catch(() => {});
+    }
+
+    // Sidebar filter
+    const filterInput = document.getElementById('toc-filter');
+    const navLinks = Array.from(document.querySelectorAll('.nav-list a'));
+    if (filterInput) {
+      filterInput.addEventListener('input', () => {
+        const q = filterInput.value.trim().toLowerCase();
+        navLinks.forEach((link) => {
+          const match = !q || link.textContent.toLowerCase().includes(q);
+          link.parentElement.style.display = match ? '' : 'none';
+        });
+      });
+    }
+
+    // Active section highlight on scroll
+    const chapters = Array.from(document.querySelectorAll('section.chapter'));
+    if ('IntersectionObserver' in window && chapters.length) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = entry.target.getAttribute('id');
+            navLinks.forEach((a) => {
+              a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+            });
+          }
+        });
+      }, { rootMargin: '-20% 0px -65% 0px' });
+      chapters.forEach((ch) => observer.observe(ch));
+    }
+  </script>
+</body>
+</html>

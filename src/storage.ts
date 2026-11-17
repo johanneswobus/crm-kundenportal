@@ -166,22 +166,115 @@ export async function hashPassword(password: string): Promise<string> {
   }
 }
 
+export interface SQLiteStats {
+  dbPath: string;
+  fileSizeBytes: number;
+  journalMode: string;
+  lastSavedAt: string | null;
+  tableCounts: {
+    adminProfile: number;
+    customers: number;
+    files: number;
+    messages: number;
+    appointments: number;
+    botRules: number;
+    unresolvedQueries: number;
+    invoices: number;
+    customTemplates: number;
+    inventoryProducts: number;
+    suppliers: number;
+    stockMovements: number;
+    supplierOrders: number;
+    auditLogs: number;
+  };
+  totalRecords: number;
+}
+
 export async function fetchServerCRMData(): Promise<CRMData> {
   const res = await fetch('/api/crm-data');
   if (!res.ok) {
-    throw new Error('Failed to load CRM data from server');
+    throw new Error('Failed to load CRM data from SQLite database');
   }
   return res.json();
 }
 
-export async function saveServerCRMData(data: CRMData): Promise<void> {
+export async function saveServerCRMData(data: CRMData): Promise<SQLiteStats | undefined> {
   const res = await fetch('/api/crm-data', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
   if (!res.ok) {
-    throw new Error('Failed to save CRM data to server');
+    throw new Error('Failed to save CRM data to SQLite database');
   }
+  const result = await res.json();
+  return result?.stats;
 }
+
+export async function fetchSQLiteStatus(): Promise<SQLiteStats> {
+  const res = await fetch('/api/sqlite/status');
+  if (!res.ok) {
+    throw new Error('Failed to load SQLite status');
+  }
+  return res.json();
+}
+
+export async function downloadSQLiteFile(): Promise<void> {
+  const res = await fetch('/api/sqlite/download');
+  if (!res.ok) {
+    throw new Error('SQLite-Datei konnte nicht heruntergeladen werden');
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().split('T')[0];
+  a.href = url;
+  a.download = `crm_datenbank_${dateStr}.db`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadSQLiteAsJSON(): Promise<{ filename: string; totalRecords?: number }> {
+  const res = await fetch('/api/sqlite/export-json');
+  if (!res.ok) {
+    throw new Error('SQLite-Datenbank konnte nicht als JSON exportiert werden');
+  }
+  const totalRecordsHeader = res.headers.get('X-SQLite-Total-Records');
+  const totalRecords = totalRecordsHeader ? parseInt(totalRecordsHeader, 10) : undefined;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().split('T')[0];
+  const filename = `crm_sqlite_backup_${dateStr}.json`;
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return { filename, totalRecords: Number.isNaN(totalRecords) ? undefined : totalRecords };
+}
+
+export async function importSQLiteFile(file: File): Promise<{ data: CRMData; stats: SQLiteStats }> {
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Datei konnte nicht gelesen werden'));
+    reader.readAsDataURL(file);
+  });
+
+  const res = await fetch('/api/sqlite/import-db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base64 })
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(result?.error || 'SQLite-Import fehlgeschlagen');
+  }
+  return { data: result.data, stats: result.stats };
+}
+
 

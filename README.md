@@ -1,102 +1,185 @@
-# Sicheres CRM & Mandantenportal (Secure CRM & Customer Portal)
+# 🔐 CRM Beratung – Sicheres CRM- & Mandantenportal
 
-Ein hochmodernes, offline-fähiges CRM- und Mandantenportal für die sichere Datenverwaltung, Projektkoordination, Meilenstein-Dokumentation und End-to-End-verschlüsselte Kommunikation.
-
-Das Portal arbeitet vollständig clientseitig in der lokalen Browser-Sandbox und synchronisiert bei aktiver Netzwerkverbindung transparent mit einem Server-Speicher. Eine Übertragung sensibler Passwörter oder Dateiinhalte an Drittanbieter-Cloud-Plattformen ist vollständig ausgeschlossen.
+Ein modernes, **offline-fähiges CRM- und Mandantenportal** auf Basis von **React 19**, **Express** und einer vollständig integrierten **SQLite-Datenbank (`/data/crm.db`)**. Entwickelt für Beratungsunternehmen, Kanzleien und Agenturen zur sicheren Verwaltung von Mandanten, Projekten, Dokumenten, Verträgen (inkl. digitaler Signatur), Rechnungen, Warenwirtschaft (WWS) und Ende-zu-Ende-verschlüsselter Kommunikation.
 
 ---
 
-## 🌟 Hauptfunktionen & Neuerungen
+## Inhaltsverzeichnis
 
-### 1. Duales Rollen- & Sicherheits-Konzept
-*   **Administrator (CRM-Leitung):** Voller Zugriff auf Dashboard, Live-Performance-Metriken, Umsatz- und Meilenstein-Analysen, Kundenverwaltung, Projektverträge, Übergabeprotokolle und das Hochladen von Videos (z. B. Onboarding-Inhalte).
-*   **Mandant (Selbständige Kundenverwaltung):** Zugriff auf ein Onboarding-Dashboard, den Projekt-Roadmap-Schnittstellenfortschritt, Dokumentenfreigaben und den verschlüsselten Chat mit Audit-Logs.
-
-### 2. Mandanten-Selbstregistrierung & Freischaltung
-*   Neukunden können sich über ein sicheres Registrierungsformular anmelden.
-*   Jeder neu registrierte Account erhält den Status **Aktivierung ausstehend** und ist für die Anmeldung gesperrt.
-*   Administratoren erhalten im CRM-Kontrollzentrum eine visuelle Benachrichtigung über ausstehende Registrierungen und können diese mit einem Klick prüfen und sicher freischalten.
-
-### 3. Passwort-Generierung & Interaktive Stärke-Checkliste
-*   **Echtzeit-Anforderungs-Checkliste:** Das Registrierungsformular wurde um eine Echtzeit-Anforderungs-Checkliste erweitert. Der Benutzer sieht sofort, welche Kriterien (Länge, Sonderzeichen, Großbuchstaben, Kleinbuchstaben, Zahlen) bereits erfüllt sind.
-*   **Automatische Passwortgenerierung:** Ein integrierter Zufallsgenerator erstellt mit einem Klick ein starkes, kryptografisch sicheres Passwort, fügt es direkt in das Passwortfeld ein und kopiert es in die Zwischenablage.
-*   **Klartext-Umschalter:** Benutzer können Passwörter über ein Augensymbol temporär im Klartext anzeigen lassen.
-
-### 4. Admin-Login-Panel mit reaktivem Feedback
-*   Der primäre Anmeldebutton (`#btn-submit`) im Admin-Login-Panel wurde mit sanften Micro-Interaktionen aufgebessert:
-    *   **Smooth Hover Transition:** Ein sanfter Skalierungseffekt (`scale-[1.015]`), ein weicher Übergang des Hintergrunds zu einem lebendigen Blau und ein dezenter Schattenwurf vermitteln dem Benutzer interaktive Tiefe.
-    *   **Active Click Animation:** Beim Drücken schrumpft das Element minimal (`scale-[0.98]`), um ein klares haptisches Schalt-Feedback zu simulieren.
-
-### 5. Globale Tastatur-Kurzbefehle (Hotkeys)
-Für extrem schnelles Navigieren und Arbeiten stehen dem angemeldeten Benutzer globale Tastenkombinationen zur Verfügung:
-*   `Strg + D` / `Cmd + D`: Direkter Wechsel aus jeder Ansicht zum Haupt-**Dashboard**.
-*   `Strg + K` / `Cmd + K`: Öffnet sofort die **Suche**:
-    *   *Administrator:* Wechselt zur **Mandantenverwaltung** (Katalogsicht) und fokussiert automatisch das Suchfeld, um den Cursor sofort startklar zu machen.
-    *   *Mandant:* Wechselt zum **WWS-Warenbestand** und fokussiert das Produktsuchfeld für eine blitzschnelle Filterung von Lizenzen und Hardware.
-
-### 6. Login-Sicherheitszähler & Automatisierte Backup-Erinnerung
-*   Das System erfasst die Anzahl erfolgreicher Anmeldungen des Administrators im Hintergrund (`admin_login_count` im LocalStorage).
-*   Nach jeweils **3 Anmeldungen ohne Sicherung** erscheint am oberen Rand des Management-Dashboards ein optisch unaufdringlicher, animierter Sicherheits-Hinweis.
-*   Dieser erinnert den Administrator daran, dass das System standardmäßig in einer gekapselten Sandbox läuft, und schützt vor unbeabsichtigter Cache-Löschung durch Browser-Updates:
-    *   *Sofort-Backup:* Ein Klick exportiert die komplette CRM-Datenbank als strukturierte JSON-Schnittstellendatei.
-    *   *Intervall-Reset:* Über "Später erinnern" lässt sich der Warnhinweis bis zum nächsten Zyklus stummschalten.
-
-### 7. Vollwertiges JSON-Datenbank-Management (Export & Import)
-Das administrative "System zurücksetzen"-Menü wurde zu einem vollwertigen **Datenmanagement-Zentrum** erweitert:
-*   **Backup exportieren:** Erstellt ein vollständiges, maschinenlesbares Abbild des aktuellen Kanzleibestands (alle Kunden, Verträge, Notizen, Chat-Verläufe, Termine) in Form einer JSON-Backup-Datei.
-*   **Backup einspielen (Restore):** Ermöglicht das Wiederherstellen eines älteren Systemstands. Vor dem Einspielen prüft das System die JSON-Struktur auf Konsistenz und bittet den Administrator um eine Bestätigung, um versehentliches Überschreiben von Echtdaten auszuschließen.
-
-### 8. Ende-zu-Ende-Verschlüsselung (E2EE)
-*   Sämtliche internen Chat-Nachrichten und Notizen werden clientseitig durch eine fortschrittliche XOR-E2EE-Funktion mit Base64-Verschleierung codiert, sodass die Rohdaten niemals unverschlüsselt die Sandbox verlassen.
+1. [Funktionsumfang im Überblick](#-funktionsumfang-im-überblick)
+2. [Systemvoraussetzungen](#-systemvoraussetzungen)
+3. [Installationsanleitung (Lokal & Produktiv)](#-installationsanleitung-lokal--produktiv)
+4. [Standard-Zugangsdaten](#-standard-zugangsdaten)
+5. [SQLite-Datenbank & Datensicherung](#-sqlite-datenbank--datensicherung)
+6. [Sicherheit & Tastaturkürzel](#-sicherheit--tastaturkürzel)
+7. [API-Endpunkte](#-api-endpunkte)
+8. [Ausführliches HTML-Handbuch](#-ausführliches-html-handbuch)
 
 ---
 
-## 🛠️ Technische Architektur
+## 🌟 Funktionsumfang im Überblick
 
-Das Portal basiert auf einem modernen **React 18** Single-Page-Anwendungskonzept (SPA) mit **Vite** als Build-Toolchain:
+### Administrator-Bereich (CRM-Leitung)
+- **Management Dashboard:** Live-Übersicht zu Mandanten, **Neuanmeldungen**, **Dokumenten-Speicherverbrauch**, offenen Rechnungen, **24h-Login-Monitoring** (Flächendiagramm mit Brute-Force-Erkennung & Simulator), **SQLite-Kontrollzentrum** und **Daten-Integritätsprüfung**.
+- **Benutzer-Aktionen (Chronologisches Audit-Log):** Eigene Tab-Ansicht aller System- und Benutzerereignisse als kalendertag-gruppierte **chronologische Zeitleiste** oder **Tabellenansicht** – inkl. KPI-Karten, Status-/Benutzer-/Volltextfilter, Sortierumkehr, CSV-Export und Protokoll-Bereinigung.
+- **Kundenverwaltung:** Anlegen, Bearbeiten, Freischalten selbstregistrierter Neukunden, Passwort-Zurücksetzung, Statusfilter (*Neukunde*, *Aktiv*, *Stammkunde*, *Inaktiv*), Sortierung nach Registrierungsdatum sowie **CSV- und JSON-Export/Import** der Kundenliste.
+- **Kunden-Projekte & Fahrplan-Schablonen:** 5-Phasen-Projektfahrplan (Roadmap) pro Mandant, eigener **Schablonen-Builder**, digitales **Übergabeprotokoll** und Onboarding-Daten.
+- **Warenwirtschaft (WWS):** Artikelstamm mit SKU/Lagerort, Mindestbestands-Warnung, Lagerbewegungen, Lieferantenverwaltung und Bestellwesen.
+- **Dokumenten-Zentrale & DGM-Signatur:** Verwaltung hochgeladener Verträge, PDFs und Medien inkl. kryptografischer Signaturprüfung (HMAC-SHA256).
+- **Direktnachrichten (DMs):** Direkter Chat mit Mandanten inklusive Dateianhängen und optionaler E2EE-Verschlüsselung.
+- **Termine & Planung:** Zentrale Terminverwaltung mit Status- und Mandantenzuordnung.
+- **Finanzen & Rechnungen:** Rechnungserstellung mit Einzelposten, automatischer Brutto/Netto/USt.-Berechnung (19 % USt. sowie steuerfreie Courtagen nach § 4 Nr. 11 UStG) und **Steuerbüro-CSV-Export**.
+- **KI-Bot Training:** Lokale, kostenfreie NLP-Keyword-Engine mit Trigger-Verwaltung und Auswertung unbeantworteter Kundenfragen (*Unresolved Queries*).
 
-*   **UI-Framework:** Tailwind CSS mit reaktiven Layouts.
-*   **Animationen:** `motion/react` für flüssige Übergänge.
-*   **Icons:** Konsistente Vektorbibliothek über `lucide-react`.
-*   **Datenvisualisierung:** D3.js und Recharts für interaktive Dashboards und Diagramme.
+### Mandantenportal (Kundenansicht)
+- **Kunden-Dashboard & Echtzeit-Fahrplan:** Transparente Darstellung der aktuellen Projektphase und Aufgaben.
+- **Vertragsübersicht & DGM-Signatur:** Verträge digital prüfen und direkt im Browser rechtssicher zeichnen.
+- **Dokumente & Uploads / Warenbestand (WWS) / Meine Rechnungen / Termine / DMs / Profil / Hilfe.**
 
 ---
 
-## 🚀 Installation & Lokaler Betrieb
+## 💻 Systemvoraussetzungen
 
-### Voraussetzungen
-Stellen Sie sicher, dass Node.js (Version 18.x oder neuer) und npm auf Ihrem System installiert sind.
+| Komponente | Mindestanforderung | Hinweis |
+| :--- | :--- | :--- |
+| **Node.js** | **v22.5.0 oder neuer** (empfohlen: **Node 22 LTS**) | Zwingend erforderlich für das integrierte Modul `node:sqlite` (`DatabaseSync`) |
+| **npm** | v10+ | Wird mit Node.js mitgeliefert |
+| **Betriebssystem** | Linux, macOS oder Windows | Getestet unter Linux (x64/ARM64) |
+| **Port** | `3000` (Standard) | Konfigurierbar im Server |
 
-### 1. Abhängigkeiten installieren
+> **Wichtig:** Prüfen Sie vor der Installation Ihre Node-Version mit `node -v`. Ältere Versionen (z. B. Node 18 oder Node 20) enthalten `node:sqlite` noch nicht!
+
+---
+
+## 🚀 Installationsanleitung (Lokal & Produktiv)
+
+### Schritt 1: Projektdateien bereitstellen
+Klonen Sie das Repository oder entpacken Sie das Projektarchiv in ein Verzeichnis Ihrer Wahl und wechseln Sie in den Projektordner:
+
+```bash
+git clone <REPOSITORY-URL> crm-beratung
+cd crm-beratung
+```
+
+### Schritt 2: Node.js-Version prüfen
+Stellen Sie sicher, dass Node.js ≥ 22.5 aktiv ist:
+
+```bash
+node -v
+# Erwartete Ausgabe z. B.: v22.23.2
+```
+
+### Schritt 3: Abhängigkeiten installieren
+Installieren Sie alle benötigten Pakete:
+
 ```bash
 npm install
 ```
 
-### 2. Entwicklungsserver starten
-Der integrierte Webserver startet mit Hot-Module-Replacement (HMR) deaktiviert (Plattform-Standard für konsistente Vorschauen).
+### Schritt 4: Umgebungsvariablen konfigurieren (optional)
+Kopieren Sie bei Bedarf die Vorlage `.env.example` nach `.env` und passen Sie Werte (z. B. `APP_URL` oder optional `GEMINI_API_KEY`) an:
+
+```bash
+cp .env.example .env
+```
+
+*(Für den reinen Offline-/SQLite-CRM-Betrieb sind keine externen API-Schlüssel erforderlich.)*
+
+### Schritt 5: Anwendung starten
+
+#### Variante A – Entwicklungsmodus (mit Vite Middleware)
 ```bash
 npm run dev
 ```
-Das Portal ist anschließend lokal unter `http://localhost:3000` erreichbar.
+Der Server startet auf `http://0.0.0.0:3000` (lokal erreichbar unter **`http://localhost:3000`**).
+Beim ersten Start wird automatisch das Verzeichnis `./data/` sowie die SQLite-Datenbank `./data/crm.db` erstellt.
 
-### 3. Produktions-Build erstellen
-Kompiliert die Anwendung in hoch-performante, statische HTML/JS/CSS-Dateien im Verzeichnis `/dist`:
+#### Variante B – Produktionsbetrieb (Build + Node-Server)
+1. Frontend und Server kompilieren:
+   ```bash
+   npm run build
+   ```
+   *(Erstellt das statische Frontend in `dist/` und das Server-Bundle `dist/server.cjs`.)*
+
+2. TypeScript-Prüfung (optional zur Verifikation):
+   ```bash
+   npm run lint
+   ```
+
+3. Produktions-Server starten:
+   ```bash
+   NODE_ENV=production npm start
+   ```
+   *(Führt `node dist/server.cjs` aus und stellt die App sowie alle APIs auf Port `3000` bereit.)*
+
+#### Hinweise für den Dauerbetrieb (PM2 / systemd)
+Für einen Server-Dauerbetrieb empfiehlt sich ein Prozessmanager wie **PM2**:
 ```bash
-npm run build
+npm install -g pm2
+NODE_ENV=production pm2 start dist/server.cjs --name crm-beratung
+pm2 save
 ```
 
 ---
 
-## 🔒 Sicherheitsmerkmale
-1.  **Zero-Knowledge-Ansatz:** Passwörter werden ausschließlich mit kryptografischen PBKDF2/SHA256-Routinen gehasht übertragen bzw. verarbeitet.
-2.  **Lokalität vor Cloud:** Alle Daten verbleiben vorzugsweise im standardisierten `sessionStorage` bzw. `localStorage` des Webbrowsers, es sei denn, der Online-Sync wird explizit durch den Administrator angestoßen.
+## 🔑 Standard-Zugangsdaten
+
+Beim ersten Start stehen vorkonfigurierte Demo-Konten zur Verfügung:
+
+| Rolle | Benutzername | Passwort | Hinweis |
+| :--- | :--- | :--- | :--- |
+| **Administrator** | `admin` | `admin123` | **Nach dem ersten Login umgehend im Admin-Profil ändern!** |
+| **Mandant (Demo 1)** | `max.muster` | `kunde123` | Stammkunde „Max Mustermann (Muster GmbH)“ |
+| **Mandant (Demo 2)** | `anna.schmidt` | `kunde123` | Neukunde „Anna Schmidt (Schmidt AG)“ |
+
+Neue Mandanten können sich über den Registrierungslink auf der Anmeldeseite selbst anmelden (inkl. Passwort-Generator und Echtzeit-Stärkeprüfung). Neu registrierte Konten bleiben aus Sicherheitsgründen gesperrt, bis ein Administrator sie in der **Kundenverwaltung** freischaltet.
 
 ---
 
-## ⚠️ WICHTIGER RECHTLICHER HINWEIS / DISCLAIMER
-*(Keine Haftung für irgendetwas, Nutzung auf eigene Gefahr)*
+## 💾 SQLite-Datenbank & Datensicherung
 
-1. **Keine Gewährleistung (As-Is):** Diese Applikation wird im vorliegenden Zustand ("as-is" oder "wie besehen") bereitgestellt. Es wird keinerlei Garantie oder Versicherung – weder ausdrücklich noch stillschweigend – für die Funktionsfähigkeit, Richtigkeit, Vollständigkeit, Stabilität, Datensicherheit oder Eignung für einen bestimmten Zweck dieser Software übernommen.
-2. **Haftungsausschluss:** Die Entwickler und Bereitsteller dieser Software haften in keinem Fall für jegliche direkten, indirekten, zufälligen, besonderen oder Folgeschäden. Dies gilt insbesondere für Schäden aus Datenverlust (z.B. durch das Löschen des Caches, Browser-Updates oder unsachgemäßen Datenbank-Import), entgangenem Gewinn, Betriebsunterbrechungen oder sonstige wirtschaftliche Verluste, die durch die Nutzung oder Unfähigkeit zur Nutzung der Applikation entstehen.
-3. **Eigenverantwortung bei Backups:** Da das CRM-System primär dezentral in der lokalen Browser-Sandbox (`localStorage` & `sessionStorage`) operiert, obliegt die regelmäßige Sicherung der Daten (über die integrierte Backup-Exportfunktion) vollständig der alleinigen Verantwortung des Administrators. Verlorene lokale Daten können bei Cache-Leerung des Benutzers nicht serverseitig wiederhergestellt werden, sofern kein Backup lokal vorgehalten wird.
-4. **Keine Rechts- oder Steuerberatung:** Die bereitgestellten Vorlagen für Dienstleistungsverträge, NDAs, Kostenvoranschläge und Rechnungsmodule sind reine Demo-Beispiele. Sie ersetzen keine qualifizierte Rechts- oder Steuerberatung. Für die rechtliche Gültigkeit von im Portal vorgenommenen digitalen Signaturen wird keine Gewähr übernommen.
+Die gesamte Anwendung wird vollständig über eine relationale **SQLite-Datenbank** im **WAL-Modus** (`Write-Ahead Logging`) unter **`/data/crm.db`** persistiert:
+
+- **15 Tabellen:** `app_state`, `admin_profile`, `customers`, `files`, `messages`, `appointments`, `bot_rules`, `unresolved_queries`, `invoices`, `custom_templates`, `inventory_products`, `suppliers`, `stock_movements`, `supplier_orders`, `audit_logs`.
+- **Automatische Migration:** Liegt beim Serverstart eine ältere `/data/crm_data.json` vor, importiert der Server diese automatisch und verlustfrei in `crm.db`.
+- **Dualer Offline-Schutz:** Änderungen werden im Browser (`localStorage`) zwischengespeichert und bei aktiver Server-Verbindung automatisch mit SQLite synchronisiert. Der aktuelle Status (`SQLite-Sync`, `Sichern...`, `Sync-Fehler`) sowie der letzte Zeitstempel sind dauerhaft in der Sidebar sichtbar.
+- **Backup-Optionen im Admin-Dashboard:**
+  1. **SQLite `.db`-Datei herunterladen** (`GET /api/sqlite/download`) & wieder importieren (`POST /api/sqlite/import-db`).
+  2. **SQLite-Stand als JSON exportieren** (`GET /api/sqlite/export-json`) für menschenlesbare lokale Sicherungen.
+  3. **Passphrasen-geschütztes E2EE-Backup** (SHA-256 Stream-Cipher im Browser) inklusive Wiederherstellungs-Assistent.
+  4. **Kundenliste einzeln als CSV oder JSON** direkt aus der Kundenverwaltung exportieren.
+
+---
+
+## 🛡️ Sicherheit & Tastaturkürzel
+
+- **Brute-Force-Schutz:** Nach 5 fehlgeschlagenen Login-Versuchen greift automatisch eine 30-sekündige Anmeldesperre; jeder Fehlversuch wird im Audit-Log vermerkt.
+- **Inaktivitäts-Abmeldung:** Nach 15 Minuten Inaktivität erfolgt ein automatischer Logout; 60 Sekunden vorher warnt ein Countdown-Modal mit 1-Klick-Verlängerung.
+- **Passwort-Hashing:** SHA-256-Hashing im Client vor Speicherung.
+- **Tastaturkürzel (im eingeloggten Portal):**
+  - `Strg + D` / `Cmd + D`: Direkt zum **Dashboard** wechseln
+  - `Strg + K` / `Cmd + K`: Globale **Kunden- bzw. Produktsuche** öffnen
+
+---
+
+## 🔌 API-Endpunkte
+
+| Methode | Pfad | Beschreibung |
+| :--- | :--- | :--- |
+| `GET` | `/api/crm-data` | Lädt den kompletten CRM-Datenbestand aus SQLite |
+| `POST` | `/api/crm-data` | Speichert den gesamten CRM-Bestand transaktional in SQLite |
+| `GET` | `/api/sqlite/status` | Liefert DB-Pfad, Dateigröße, WAL-Modus und Zeilenzahlen aller Tabellen |
+| `GET` | `/api/sqlite/download` | Lädt die binäre SQLite-Datei (`crm_datenbank_YYYY-MM-DD.db`) herunter |
+| `GET` | `/api/sqlite/export-json` | Exportiert den aktuellen SQLite-Stand als JSON (`crm_sqlite_backup_YYYY-MM-DD.json`) |
+| `POST` | `/api/sqlite/import-db` | Importiert eine hochgeladene `.db`-Datei (Base64) und ersetzt den aktiven Datenbestand |
+| `GET` / `POST` | `/api/sqlite/settings/:key` | Liest/schreibt Schlüssel-Wert-Einstellungen in `app_state` |
+| `POST` | `/api/debug-log` | Protokolliert Client-Fehler in `/data/client_debug.json` |
+| `GET` | `/handbuch.html` | Öffnet das vollständige HTML-Handbuch im Browser |
+
+---
+
+## 📘 Ausführliches HTML-Handbuch
+
+Eine umfassende, eigenständige und druckfähige HTML-Dokumentation mit allen Modulen, Architekturdiagramm, API-Referenz, Backup-Leitfaden und Schritt-für-Schritt-Installationsanleitung liegt im Stammverzeichnis:
+
+👉 **[`HANDBUCH.html`](./HANDBUCH.html)** *(direkt im Browser öffnen oder bei laufendem Server unter `http://localhost:3000/handbuch.html` aufrufen)*

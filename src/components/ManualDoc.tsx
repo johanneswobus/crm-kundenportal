@@ -74,8 +74,24 @@ export default function ManualDoc() {
               Technische Spezifikationen, Prozesspfade und Handlungsanleitungen für Mandanten und Administration.
             </p>
           </div>
-          <div className="flex items-center text-[11px] font-mono bg-slate-800/80 text-indigo-300 px-3.5 py-2 rounded-xl border border-slate-700 w-max">
-            <span>Stand: Mai 2026</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/handbuch.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-xl transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>HTML-Handbuch öffnen</span>
+            </a>
+            <a
+              href="/handbuch.html"
+              download="CRM_Beratung_Handbuch.html"
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3.5 py-2 rounded-xl border border-slate-700 transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>HTML herunterladen</span>
+            </a>
           </div>
         </div>
       </div>
